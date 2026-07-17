@@ -2,6 +2,7 @@ import logging
 import sqlite3
 import os
 import re
+import asyncio
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
 from aiogram.types import InlineKeyboardButton
@@ -9,15 +10,15 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiohttp import web
 from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
 
-# --- CONFIGURATION (ပြင်ဆင်ရန်) ---
-BOT_TOKEN = "8463292751:AAFcS2jd50RPs79yrFdYcJvtvw5DMhAkDX8"      
+# --- CONFIGURATION ---
+BOT_TOKEN = "8962171444:AAGfz63sO6HQwlWms51RbaRE5WlROji6aYk"      
 GROUP_ID = -1003913717685             
 REQUIRED_SHARES = 5                   
 GROUP_REQUEST_LINK = "https://t.me/+LFpe_NpuiO1mOTA1"
 
-# ပြသမည့် Content (ဒီနေရာမှာ မင်းပြချင်တဲ့ ဗီဒီယို သို့မဟုတ် ပုံရဲ့ Telegram File ID သို့မဟုတ် Direct Link ကို ထည့်ပါ)
-# လက်ရှိတွင် နမူနာစာသားဖြင့် ပြထားပါသည်
-LOCKED_CONTENT_TEXT = "🔥 VIP Group ထဲမှာ အခုလိုမျိုး လုံးဝ အလန်းစား ဗီဒီယိုတွေနဲ့ ပုံတွေ အများကြီး အပြည့်အစုံ ရှိနေပါပြီဗျာ!"
+# 👑 မင်းရဲ့ ကိုယ်ပိုင် Telegram Account ID (အက်ဒမင် ID) ကို ဒီမှာ ထည့်ပေးပါ
+# (ဒါမှ မင်းပို့တဲ့ ဗီဒီယိုပဲ Bot က လက်ခံမှာပါ)
+ADMIN_ID = 5238487314  # မင်းရဲ့ ID နံပါတ် အမှန်ကို ဒီနေရာမှာ အစားထိုးပါ
 
 WEBHOOK_HOST = "https://Myaibot-production.up.railway.app"
 WEBHOOK_PATH = f"/webhook/{BOT_TOKEN}"
@@ -33,6 +34,7 @@ dp = Dispatcher()
 # --- DATABASE SETUP ---
 conn = sqlite3.connect("group_gate.db", check_same_thread=False)
 cursor = conn.cursor()
+
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS users (
     user_id INTEGER PRIMARY KEY, 
@@ -41,6 +43,12 @@ CREATE TABLE IF NOT EXISTS users (
     count INTEGER DEFAULT 0, 
     referred_by INTEGER
 )""")
+
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS settings (
+    key TEXT PRIMARY KEY,
+    value TEXT
+)""")
 conn.commit()
 
 def get_user_count(uid):
@@ -48,17 +56,40 @@ def get_user_count(uid):
     res = cursor.fetchone()
     return res[0] if res else 0
 
-# --- AUTO-DELETE (ဝင်စာ/ထွက်စာ/လင့်ခ် ဖျက်မည့်အပိုင်း) ---
+def get_latest_video():
+    cursor.execute("SELECT value FROM settings WHERE key='latest_video'")
+    res = cursor.fetchone()
+    return res[0] if res else None
 
-@dp.message(F.chat.id == GROUP_ID, F.new_chat_members | F.left_chat_member)
-async def delete_join_left_message(message: types.Message):
+def set_latest_video(file_id):
+    cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('latest_video', ?)", (file_id,))
+    conn.commit()
+
+# --- Auto Delete Function ---
+async def delete_preview_video(chat_id: int, message_id: int, delay: int = 20):
+    await asyncio.sleep(delay)
     try:
-        await message.delete()
+        await bot.delete_message(chat_id=chat_id, message_id=message_id)
     except Exception:
         pass
 
+# --- 👑 ADMIN VIDEO SETTING HANDLER 👑 ---
+# မင်းက Bot ဆီ ဗီဒီယို တိုက်ရိုက်ပို့ရင် Preview အဖြစ် သိမ်းဆည်းမည့်အပိုင်း
+@dp.message(F.chat.type == "private", F.from_user.id == ADMIN_ID, F.video)
+async def save_admin_preview_video(message: types.Message):
+    set_latest_video(message.video.file_id)
+    await message.reply("🎉 အောင်မြင်ပါပြီသခင်! သင်ပို့လိုက်တဲ့ ဗီဒီယိုကို လူသစ်တွေအတွက် Preview အဖြစ် သိမ်းဆည်းလိုက်ပါပြီ။ (စက္ကန့် ၂၀ ပြပြီး Auto ပျက်မယ့်စနစ် အလုပ်လုပ်ပါလိမ့်မယ်)")
+
+# --- GROUP MESSAGES & AUTO-DELETE ---
 @dp.message(F.chat.id == GROUP_ID)
-async def delete_links(message: types.Message):
+async def handle_group_messages(message: types.Message):
+    if message.new_chat_members or message.left_chat_member:
+        try:
+            await message.delete()
+        except Exception:
+            pass
+        return
+
     has_link = False
     if message.text and (re.search(r"t\.me", message.text, re.IGNORECASE) or message.entities):
         for entity in message.entities or []:
@@ -82,7 +113,6 @@ async def delete_links(message: types.Message):
             pass
 
 # --- BOT HANDLERS ---
-
 @dp.message(Command("start"))
 async def start_command(message: types.Message):
     if message.chat.type != "private":
@@ -121,7 +151,6 @@ async def start_command(message: types.Message):
         cursor.execute("INSERT INTO users (user_id, count, referred_by, username, first_name) VALUES (?, 0, ?, ?, ?)", (uid, referrer_id, uname, fname))
         conn.commit()
     else:
-        # ရှိပြီးသားလူဆိုလျှင်လည်း အချက်အလက် Update လုပ်ရန်
         cursor.execute("UPDATE users SET username=?, first_name=? WHERE user_id=?", (uname, fname, uid))
         conn.commit()
 
@@ -134,24 +163,38 @@ async def start_command(message: types.Message):
     builder.row(InlineKeyboardButton(text="📢 ၂။ အခြား Group များသို့ ရှဲရန်", url=share_url))
     builder.row(InlineKeyboardButton(text="🏆 Top 10 Leaderboard ကိုကြည့်ရန်", callback_data="show_leaderboard"))
     
-    await message.answer(
+    video_to_send = get_latest_video()
+    
+    instructions_text = (
         f"👋 မင်္ဂလာပါ {fname} ဗျာ။\n\n"
-        f"🎬 **Preview Content:**\n{LOCKED_CONTENT_TEXT}\n\n"
-        f"⚠️ **စည်းကမ်းချက်:** ဤအရာ၏ အပြည့်အစုံနှင့် VIP Group ထဲသို့ ဝင်ရောက်နိုင်ရန် အောက်ပါအတိုင်း လုပ်ဆောင်ပေးရပါမည် -\n"
-        f"၁။ **'၁။ VIP Group ဝင်ခွင့်တောင်းရန်'** ကိုနှိပ်ပြီး ဝင်ခွင့်တောင်းထားပါ။\n"
-        f"၂။ **'၂။ အခြား Group များသို့ ရှဲရန်'** ကိုနှိပ်ပြီး လူ (၅) ယောက်ခေါ်ပေးပါ။\n\n"
-        f"📊 လက်ရှိ သင့်လင့်ခ်မှ ဝင်လာသူ: [{count}/{REQUIRED_SHARES}] ယောက်။\n"
-        f"🏆 အောက်က Leaderboard ခလုတ်ကိုနှိပ်ပြီး လူအများဆုံးခေါ်ထားတဲ့သူတွေကိုလည်း ကြည့်နိုင်ပါတယ်ဗျာ။",
-        reply_markup=builder.as_markup()
+        f"⚠️ *စည်းကမ်းချက်:*\n"
+        f"ဗီဒီယိုအပြည့်အစုံနှင့် VIP Group ထဲသို့ ဝင်ရောက်နိုင်ရန် အောက်ပါအတိုင်း လုပ်ဆောင်ပေးရပါမည် -\n\n"
+        f"၁။ *၁။ VIP Group ဝင်ခွင့်တောင်းရန်* ခလုတ်ကိုနှိပ်ပြီး ဝင်ခွင့်တောင်းထားပါ။\n"
+        f"၂။ *၂။ အခြား Group များသို့ ရှဲရန်* ခလုတ်ကိုနှိပ်ပြီး လူ (၅) ယောက်ခေါ်ပေးပါ။\n\n"
+        f"📊 လက်ရှိ သင့်လင့်ခ်မှ ဝင်လာသူ: [{count}/{REQUIRED_SHARES}] ယောက်။\n\n"
+        f"🏆 အောက်က Leaderboard ခလုတ်ကိုနှိပ်ပြီး လူအများဆုံးခေါ်ထားတဲ့သူတွေကိုလည်း ကြည့်နိုင်ပါတယ်ဗျာ။"
     )
 
-# Leaderboard ခလုတ်နှိပ်လျှင် ထိပ်ဆုံး ၁၀ ယောက်စာရင်းပြပေးမည့်အပိုင်း
+    if video_to_send:
+        try:
+            preview_msg = await bot.send_video(
+                chat_id=uid,
+                video=video_to_send,
+                caption="⏳ *Preview Video:* ဒီဗီဒီယိုက စက္ကန့် ၂၀ နေရင် အလိုအလျောက် ပြန်ပျက်သွားပါလိမ့်မယ်။",
+                parse_mode="Markdown"
+            )
+            asyncio.create_task(delete_preview_video(chat_id=uid, message_id=preview_msg.message_id, delay=20))
+        except Exception:
+            pass
+            
+    await message.answer(instructions_text, reply_markup=builder.as_markup(), parse_mode="Markdown")
+
 @dp.callback_query(F.data == "show_leaderboard")
 async def leaderboard_callback(callback: types.CallbackQuery):
     cursor.execute("SELECT first_name, count FROM users WHERE count > 0 ORDER BY count DESC LIMIT 10")
     top_users = cursor.fetchall()
     
-    text = "🏆 **ထိပ်ဆုံး လူအများဆုံးခေါ်နိုင်သူ ၁၀ ဦး (Top 10 Leaderboard)** 🏆\n\n"
+    text = "🏆 *ထိပ်ဆုံး လူအများဆုံးခေါ်နိုင်သူ ၁၀ ဦး (Top 10)* 🏆\n\n"
     if not top_users:
         text += "လက်ရှိတွင် လူခေါ်ထားသူ မရှိသေးပါခင်ဗျာ။"
     else:
@@ -161,15 +204,13 @@ async def leaderboard_callback(callback: types.CallbackQuery):
             
     text += "\n🔥 သင်လည်း ပထမရအောင် အမြန်ဆုံး ရှဲပြီး လူလိုက်ခေါ်လိုက်တော့နော်!"
     
-    # ရှင်းလင်းသွားအောင် Message မှာ တန်းပြပေးခြင်း
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text="🔙 နောက်သို့", callback_data="back_to_start"))
-    await callback.message.edit_text(text, reply_markup=builder.as_markup())
+    await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="Markdown")
     await callback.answer()
 
 @dp.callback_query(F.data == "back_to_start")
 async def back_to_start_callback(callback: types.CallbackQuery):
-    # မူလ Start စာမျက်နှာသို့ ပြန်သွားရန်
     uid = callback.from_user.id
     count = get_user_count(uid)
     bot_user = await bot.get_me()
@@ -182,9 +223,9 @@ async def back_to_start_callback(callback: types.CallbackQuery):
     
     await callback.message.edit_text(
         f"👋 မင်္ဂလာပါ {callback.from_user.first_name} ဗျာ။\n\n"
-        f"🎬 **Preview Content:**\n{LOCKED_CONTENT_TEXT}\n\n"
         f"📊 လက်ရှိ သင့်လင့်ခ်မှ ဝင်လာသူ: [{count}/{REQUIRED_SHARES}] ယောက်။",
-        reply_markup=builder.as_markup()
+        reply_markup=builder.as_markup(),
+        parse_mode="Markdown"
     )
     await callback.answer()
 
