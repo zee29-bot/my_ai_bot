@@ -8,13 +8,14 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiohttp import web
 from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
 
-# --- CONFIGURATION (ပြင်ဆင်ရန်) ---
-BOT_TOKEN = "8463292751:AAFcS2jd50RPs79yrFdYcJvtvw5DMhAkDX8"      # မိမိဘော့တ် တိုကင် (Token) ကို ဒီနေရာမှာ ထည့်ပါ
-GROUP_ID = -1003913717685             # သင့် Group ID ကို ထည့်ပေးထားပြီးပါပြီ
-REQUIRED_SHARES = 5                   # ရှဲခိုင်းမည့် အကြိမ်အရေအတွက်
+# --- CONFIGURATION (အပြီးအစီး ပြင်ဆင်ပြီး) ---
+BOT_TOKEN = "8463292751:AAFcS2jd50RPs79yrFdYcJvtvw5DMhAkDX8"      
+GROUP_ID = -1003913717685             
+REQUIRED_SHARES = 5                   
 
-# Webhook အတွက် Hosting တင်လျှင် သုံးမည့် Setting (ဥပမာ - Render.com)
-WEBHOOK_HOST = os.getenv("WEBHOOK_HOST", "https://your-app-name.onrender.com") 
+# မင်းပေးထားတဲ့ Railway Link ကို ကုဒ်ထဲ တိုက်ရိုက် ထည့်သွင်းပေးထားပါတယ်
+WEBHOOK_HOST = "https://Myaibot-production.up.railway.app"
+
 WEBHOOK_PATH = f"/webhook/{BOT_TOKEN}"
 WEBHOOK_URL = f"{WEBHOOK_HOST}{WEBHOOK_PATH}"
 WEB_SERVER_HOST = "0.0.0.0"
@@ -44,7 +45,6 @@ def add_user_count(uid):
 
 # --- BOT HANDLERS ---
 
-# ၁။ လူတစ်ယောက်က Group ဝင်ခွင့်လင့်ခ်ကို နှိပ်လိုက်လျှင် (Join Request ပို့လျှင်) အလိုအလျောက် စစ်ဆေးမည့်အပိုင်း
 @dp.chat_join_request()
 async def handle_join_request(update: types.ChatJoinRequest):
     uid = update.from_user.id
@@ -68,7 +68,6 @@ async def handle_join_request(update: types.ChatJoinRequest):
     except Exception:
         pass
 
-# ၂။ ရှဲပြီးလို့ စစ်ဆေးမည် (Check) ခလုတ်နှိပ်သည့်အခါ စိစစ်ပြီး ဝင်ခွင့်ပေးမည့်အပိုင်း
 @dp.callback_query(F.data == "check_join")
 async def check_and_approve(callback: types.CallbackQuery):
     uid = callback.from_user.id
@@ -76,7 +75,6 @@ async def check_and_approve(callback: types.CallbackQuery):
     
     if new_count >= REQUIRED_SHARES:
         try:
-            # ၅ ကြိမ်ပြည့်ပါက Group ထဲဝင်ခွင့်ကို Auto Approve (အတည်ပြု) လုပ်ပေးခြင်း
             await bot.approve_chat_join_request(chat_id=GROUP_ID, user_id=uid)
             await callback.message.edit_text("🎉 ဂုဏ်ယူပါတယ်! သင် ၅ ကြိမ်ပြည့်အောင် ရှဲပြီးပြီဖြစ်၍ Group ထဲသို့ အလိုအလျောက် သွတ်သွင်းပေးလိုက်ပါပြီ။ အခုပဲ ဝင်ရောက်ကြည့်ရှုနိုင်ပါပြီဗျာ။")
         except Exception:
@@ -97,6 +95,7 @@ async def check_and_approve(callback: types.CallbackQuery):
 
 # --- SERVER STARTUP (WEBHOOK) ---
 async def on_startup(bot: Bot) -> None:
+    logging.info(f"Setting webhook to: {WEBHOOK_URL}")
     await bot.set_webhook(WEBHOOK_URL)
 
 def main():
