@@ -1,6 +1,7 @@
 import logging
 import sqlite3
 import os
+import re
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
 from aiogram.types import InlineKeyboardButton
@@ -8,14 +9,13 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiohttp import web
 from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
 
-# --- CONFIGURATION (အပြီးအစီး ပြင်ဆင်ပြီး) ---
+# --- CONFIGURATION ---
 BOT_TOKEN = "8463292751:AAFcS2jd50RPs79yrFdYcJvtvw5DMhAkDX8"      
 GROUP_ID = -1003913717685             
 REQUIRED_SHARES = 5                   
+GROUP_REQUEST_LINK = "https://t.me/+LFpe_NpuiO1mOTA1"
 
-# မင်းပေးထားတဲ့ Railway Link ကို ကုဒ်ထဲ တိုက်ရိုက် ထည့်သွင်းပေးထားပါတယ်
 WEBHOOK_HOST = "https://Myaibot-production.up.railway.app"
-
 WEBHOOK_PATH = f"/webhook/{BOT_TOKEN}"
 WEBHOOK_URL = f"{WEBHOOK_HOST}{WEBHOOK_PATH}"
 WEB_SERVER_HOST = "0.0.0.0"
@@ -29,7 +29,7 @@ dp = Dispatcher()
 # --- DATABASE SETUP ---
 conn = sqlite3.connect("group_gate.db", check_same_thread=False)
 cursor = conn.cursor()
-cursor.execute("CREATE TABLE IF NOT EXISTS users (user_id INTEGER PRIMARY KEY, count INTEGER)")
+cursor.execute("CREATE TABLE IF NOT EXISTS users (user_id INTEGER PRIMARY KEY, count INTEGER DEFAULT 0, referred_by INTEGER)")
 conn.commit()
 
 def get_user_count(uid):
@@ -37,79 +37,134 @@ def get_user_count(uid):
     res = cursor.fetchone()
     return res[0] if res else 0
 
-def add_user_count(uid):
-    count = get_user_count(uid) + 1
-    cursor.execute("INSERT OR REPLACE INTO users (user_id, count) VALUES (?, ?)", (uid, count))
-    conn.commit()
-    return count
+# --- NEW: AUTO-DELETE FOR GROUP ---
 
-# --- BOT HANDLERS ---
+# ၁။ Group ထဲကို လူသစ်ဝင်လာတဲ့ စာတန်းတွေ (Service Messages) ကို ချက်ချင်းဖျက်ပေးမည့်အပိုင်း
+@dp.message(F.chat.id == GROUP_ID, F.new_chat_members)
+async def delete_join_message(message: types.Message):
+    try:
+        await message.delete()
+    except Exception:
+        pass
+
+# ၂။ Group ထဲကို လာရှဲတဲ့ လင့်ခ် (Links) တွေကို ချက်ချင်းဖျက်ပေးမည့်အပိုင်း
+@dp.message(F.chat.id == GROUP_ID)
+async def delete_links(message: types.Message):
+    # စာသားထဲမှာဖြစ်ဖြစ်၊ ခလုတ်တွေထဲမှာဖြစ်ဖြစ် လင့်ခ်ပါလာရင် စစ်ထုတ်ခြင်း
+    has_link = False
+    if message.text and (re.search(r"t\.me", message.text, re.IGNORECASE) or message.entities):
+        for entity in message.entities or []:
+            if entity.type in ["url", "text_link"]:
+                has_link = True
+                break
+                
+    if message.caption and (re.search(r"t\.me", message.caption, re.IGNORECASE) or message.caption_entities):
+        for entity in message.caption_entities or []:
+            if entity.type in ["url", "text_link"]:
+                has_link = True
+                break
+
+    if has_link:
+        try:
+            await message.delete()
+        except Exception:
+            pass
+
+# --- BOT HANDLERS (REFERRAL & JOIN REQUEST) ---
+
+@dp.message(Command("start"))
+async def start_command(message: types.Message):
+    if message.chat.type != "private":
+        return
+        
+    uid = message.from_user.id
+    args = message.text.split()
+    
+    cursor.execute("SELECT user_id FROM users WHERE user_id=?", (uid,))
+    user_exists = cursor.fetchone()
+    
+    if not user_exists:
+        referrer_id = None
+        if len(args) > 1 and args[1].startswith("ref_"):
+            try:
+                referrer_id = int(args[1].replace("ref_", ""))
+                if referrer_id != uid:
+                    cursor.execute("INSERT OR IGNORE INTO users (user_id, count) VALUES (?, 0)", (referrer_id,))
+                    cursor.execute("UPDATE users SET count = count + 1 WHERE user_id=?", (referrer_id,))
+                    conn.commit()
+                    
+                    current_points = get_user_count(referrer_id)
+                    try:
+                        if current_points >= REQUIRED_SHARES:
+                            await bot.approve_chat_join_request(chat_id=GROUP_ID, user_id=referrer_id)
+                            await bot.send_message(referrer_id, "🎉 အောင်မြင်ပါပြီ! လူ ၅ ယောက် တကယ်ဝင်လာခဲ့လို့ သင့်ကို Group ထဲ auto သွတ်သွင်းပေးလိုက်ပါပြီ။")
+                        else:
+                            await bot.send_message(referrer_id, f"➕ လူသစ်တစ်ယောက် တိုးလာပါပြီ။ လက်ရှိအခြေအနေ: [{current_points}/{REQUIRED_SHARES}] ယောက် ရှိပါပြီ။")
+                    except Exception:
+                        pass
+            except ValueError:
+                pass
+        
+        cursor.execute("INSERT INTO users (user_id, count, referred_by) VALUES (?, 0, ?)", (uid, referrer_id))
+        conn.commit()
+
+    bot_user = await bot.get_me()
+    share_url = f"https://t.me/share/url?url=https://t.me/{bot_user.username}?start=ref_{uid}&text=ညစာ 1.0 VIP Group ဝင်ချင်ရင် ဒီလင့်ခ်ကနေ ဝင်ပါဦး။"
+    count = get_user_count(uid)
+
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text="🔓 ၁။ Group ဝင်ခွင့်တောင်းရန်", url=GROUP_REQUEST_LINK))
+    builder.row(InlineKeyboardButton(text="📢 ၂။ အခြား Group များသို့ ရှဲရန်", url=share_url))
+    
+    await message.answer(
+        f"👋 ကြိုဆိုပါတယ်ဗျာ။ **ညစာ 1.0 VIP Group** ထဲသို့ ဝင်ရောက်နိုင်ရန် အောက်ပါ အဆင့် (၂) ဆင့်အတိုင်း လုပ်ဆောင်ပေးရပါမယ် -\n\n"
+        f"၁။ အောက်က **'၁။ Group ဝင်ခွင့်တောင်းရန်'** ခလုတ်ကိုနှိပ်ပြီး ဝင်ခွင့်အရင် တောင်းထားပါ။\n"
+        f"၂။ ပြီးနောက် **'၂။ အခြား Group များသို့ ရှဲရန်'** ခလုတ်ကိုနှိပ်ပြီး လူ (၅) ယောက်ခေါ်ပေးပါ။\n\n"
+        f"📊 လက်ရှိ သင့်လင့်ခ်မှ ဝင်လာသူ: [{count}/{REQUIRED_SHARES}] ယောက်။\n"
+        f"⚠️ လူ ၅ ယောက် တကယ်ဝင်လာတာနဲ့ စနစ်က သင့်ကို Group ထဲ Auto အတည်ပြု (Approve) ပေးမှာ ဖြစ်ပါတယ်။",
+        reply_markup=builder.as_markup()
+    )
 
 @dp.chat_join_request()
 async def handle_join_request(update: types.ChatJoinRequest):
     uid = update.from_user.id
     count = get_user_count(uid)
     
+    if count >= REQUIRED_SHARES:
+        try:
+            await bot.approve_chat_join_request(chat_id=GROUP_ID, user_id=uid)
+            return
+        except Exception:
+            pass
+            
     bot_user = await bot.get_me()
-    share_url = f"https://t.me/share/url?url=https://t.me/{bot_user.username}?start=ref_{uid}&text=ဒီထဲဝင်ကြည့်စရာတွေ အများကြီးရှိတယ်!"
+    share_url = f"https://t.me/share/url?url=https://t.me/{bot_user.username}?start=ref_{uid}&text=ညစာ 1.0 VIP Group ဝင်ချင်ရင် ဒီလင့်ခ်ကနေ ဝင်ပါဦး။"
     
     builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(text=f"📢 Share to Groups [{count}/{REQUIRED_SHARES}]", url=share_url))
-    builder.row(InlineKeyboardButton(text="🔄 စစ်ဆေးမည် (Check)", callback_data="check_join"))
+    builder.row(InlineKeyboardButton(text=f"📢 Share/Forward to Groups", url=share_url))
     
     try:
         await bot.send_message(
             chat_id=uid,
             text=f"👋 မင်္ဂလာပါ {update.from_user.first_name}။\n\n"
-                 f"သင်သည် Group ထဲသို့ ဝင်ခွင့်တောင်းဆိုထားပါသည်။ အထဲက ပုံ၊ စာ၊ ဗီဒီယိုများကို ကြည့်ရှုနိုင်ရန်အတွက် "
-                 f"အောက်ပါခလုတ်ကိုနှိပ်ပြီး ခြားနားသော Telegram Group (၅) ခုသို့ အရင်ဆုံး Share ပေးရပါမည်။",
+                 f"သင် Group ဝင်ခွင့်တောင်းထားတာကို လက်ခံရရှိပါတယ်၊ ဒါပေမယ့် စည်းကမ်းချက်အတိုင်း လူ ၅ ယောက် မပြည့်သေးပါဘူးခင်ဗျာ။\n"
+                 f"အောက်ကခလုတ်ကို နှိပ်ပြီး လူ (၅) ယောက်ပြည့်အောင် အရင်ဆုံး ခေါ်ပေးပါဦးနော်။\n\n"
+                 f"📊 လက်ရှိ သင့်လင့်ခ်မှ ဝင်လာသူ: [{count}/{REQUIRED_SHARES}] ယောက်။",
             reply_markup=builder.as_markup()
         )
     except Exception:
         pass
 
-@dp.callback_query(F.data == "check_join")
-async def check_and_approve(callback: types.CallbackQuery):
-    uid = callback.from_user.id
-    new_count = add_user_count(uid)
-    
-    if new_count >= REQUIRED_SHARES:
-        try:
-            await bot.approve_chat_join_request(chat_id=GROUP_ID, user_id=uid)
-            await callback.message.edit_text("🎉 ဂုဏ်ယူပါတယ်! သင် ၅ ကြိမ်ပြည့်အောင် ရှဲပြီးပြီဖြစ်၍ Group ထဲသို့ အလိုအလျောက် သွတ်သွင်းပေးလိုက်ပါပြီ။ အခုပဲ ဝင်ရောက်ကြည့်ရှုနိုင်ပါပြီဗျာ။")
-        except Exception:
-            await callback.message.edit_text("❌ Error: Bot အား Group ထဲတွင် အက်ဒမင်ခန့်ပြီး 'Approve New Members' ပေးထားရန် လိုအပ်ပါသည်။")
-    else:
-        bot_user = await bot.get_me()
-        share_url = f"https://t.me/share/url?url=https://t.me/{bot_user.username}?start=ref_{uid}"
-        
-        builder = InlineKeyboardBuilder()
-        builder.row(InlineKeyboardButton(text=f"📢 Share to Groups [{new_count}/{REQUIRED_SHARES}]", url=share_url))
-        builder.row(InlineKeyboardButton(text="🔄 စစ်ဆေးမည် (Check)", callback_data="check_join"))
-        
-        await callback.message.edit_text(
-            f"⚠️ မပြည့်သေးပါခင်ဗျာ။ လက်ရှိ [{new_count}/{REQUIRED_SHARES}] ကြိမ်ပဲ ရှိပါသေးသည်။ ကျေးဇူးပြု၍ ထပ်မံ Share ပေးပါ။",
-            reply_markup=builder.as_markup()
-        )
-    await callback.answer()
-
-# --- SERVER STARTUP (WEBHOOK) ---
+# --- SERVER STARTUP ---
 async def on_startup(bot: Bot) -> None:
-    logging.info(f"Setting webhook to: {WEBHOOK_URL}")
     await bot.set_webhook(WEBHOOK_URL)
 
 def main():
     dp.startup.register(on_startup)
     app = web.Application()
-    
-    webhook_requests_handler = SimpleRequestHandler(
-        dispatcher=dp,
-        bot=bot
-    )
+    webhook_requests_handler = SimpleRequestHandler(dispatcher=dp, bot=bot)
     webhook_requests_handler.register(app, path=WEBHOOK_PATH)
     setup_application(app, dp, bot=bot)
-    
-    print("Auto-Approve Webhook Server စတင်ပွင့်ပါပြီ...")
     web.run_app(app, host=WEB_SERVER_HOST, port=WEB_SERVER_PORT)
 
 if __name__ == "__main__":
