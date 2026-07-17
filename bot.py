@@ -11,14 +11,14 @@ from aiohttp import web
 from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
 
 # --- CONFIGURATION ---
+# 🔑 မင်းရဲ့ Token အသစ်ကို လဲလှယ်ပေးထားပါတယ်
 BOT_TOKEN = "8962171444:AAGfz63sO6HQwlWms51RbaRE5WlROji6aYk"      
 GROUP_ID = -1003913717685             
-REQUIRED_SHARES = 5                   
+REQUIRED_SHARES = 1                   
 GROUP_REQUEST_LINK = "https://t.me/+LFpe_NpuiO1mOTA1"
 
-# 👑 မင်းရဲ့ ကိုယ်ပိုင် Telegram Account ID (အက်ဒမင် ID) ကို ဒီမှာ ထည့်ပေးပါ
-# (ဒါမှ မင်းပို့တဲ့ ဗီဒီယိုပဲ Bot က လက်ခံမှာပါ)
-ADMIN_ID = 5238487314  # မင်းရဲ့ ID နံပါတ် အမှန်ကို ဒီနေရာမှာ အစားထိုးပါ
+# 👑 မင်းရဲ့ ကိုယ်ပိုင် Telegram Account ID (အက်ဒမင် ID) အသစ်ကို ပြောင်းပေးထားပါတယ်
+ADMIN_ID = 5238487314  
 
 WEBHOOK_HOST = "https://Myaibot-production.up.railway.app"
 WEBHOOK_PATH = f"/webhook/{BOT_TOKEN}"
@@ -65,7 +65,6 @@ def set_latest_video(file_id):
     cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('latest_video', ?)", (file_id,))
     conn.commit()
 
-# --- Auto Delete Function ---
 async def delete_preview_video(chat_id: int, message_id: int, delay: int = 20):
     await asyncio.sleep(delay)
     try:
@@ -73,12 +72,11 @@ async def delete_preview_video(chat_id: int, message_id: int, delay: int = 20):
     except Exception:
         pass
 
-# --- 👑 ADMIN VIDEO SETTING HANDLER 👑 ---
-# မင်းက Bot ဆီ ဗီဒီယို တိုက်ရိုက်ပို့ရင် Preview အဖြစ် သိမ်းဆည်းမည့်အပိုင်း
+# --- ADMIN VIDEO SETTING HANDLER ---
 @dp.message(F.chat.type == "private", F.from_user.id == ADMIN_ID, F.video)
 async def save_admin_preview_video(message: types.Message):
     set_latest_video(message.video.file_id)
-    await message.reply("🎉 အောင်မြင်ပါပြီသခင်! သင်ပို့လိုက်တဲ့ ဗီဒီယိုကို လူသစ်တွေအတွက် Preview အဖြစ် သိမ်းဆည်းလိုက်ပါပြီ။ (စက္ကန့် ၂၀ ပြပြီး Auto ပျက်မယ့်စနစ် အလုပ်လုပ်ပါလိမ့်မယ်)")
+    await message.reply("🎉 အောင်မြင်ပါပြီသခင်! သင်ပို့လိုက်တဲ့ ဗီဒီယိုကို လူသစ်တွေအတွက် Preview အဖြစ် သိမ်းဆည်းလိုက်ပါပြီ။")
 
 # --- GROUP MESSAGES & AUTO-DELETE ---
 @dp.message(F.chat.id == GROUP_ID)
@@ -140,7 +138,7 @@ async def start_command(message: types.Message):
                     try:
                         if current_points >= REQUIRED_SHARES:
                             await bot.approve_chat_join_request(chat_id=GROUP_ID, user_id=referrer_id)
-                            await bot.send_message(referrer_id, "🎉 အောင်မြင်ပါပြီ! လူ ၅ ယောက် တကယ်ဝင်လာခဲ့လို့ သင့်ကို Group ထဲ auto သွတ်သွင်းပေးလိုက်ပါပြီ။")
+                            await bot.send_message(referrer_id, "🎉 အောင်မြင်ပါပြီ! လူ ၁ ယောက် တကယ်ဝင်လာခဲ့လို့ သင့်ကို Group ထဲ auto သွတ်သွင်းပေးလိုက်ပါပြီ။")
                         else:
                             await bot.send_message(referrer_id, f"➕ လူသစ်တစ်ယောက် တိုးလာပါပြီ။ လက်ရှိအခြေအနေ: [{current_points}/{REQUIRED_SHARES}] ယောက် ရှိပါပြီ။")
                     except Exception:
@@ -170,7 +168,7 @@ async def start_command(message: types.Message):
         f"⚠️ *စည်းကမ်းချက်:*\n"
         f"ဗီဒီယိုအပြည့်အစုံနှင့် VIP Group ထဲသို့ ဝင်ရောက်နိုင်ရန် အောက်ပါအတိုင်း လုပ်ဆောင်ပေးရပါမည် -\n\n"
         f"၁။ *၁။ VIP Group ဝင်ခွင့်တောင်းရန်* ခလုတ်ကိုနှိပ်ပြီး ဝင်ခွင့်တောင်းထားပါ။\n"
-        f"၂။ *၂။ အခြား Group များသို့ ရှဲရန်* ခလုတ်ကိုနှိပ်ပြီး လူ (၅) ယောက်ခေါ်ပေးပါ။\n\n"
+        f"၂။ *၂။ အခြား Group များသို့ ရှဲရန်* ခလုတ်ကိုနှိပ်ပြီး **လူ (၁) ယောက်** သာ ခေါ်ပေးပါ။\n\n"
         f"📊 လက်ရှိ သင့်လင့်ခ်မှ ဝင်လာသူ: [{count}/{REQUIRED_SHARES}] ယောက်။\n\n"
         f"🏆 အောက်က Leaderboard ခလုတ်ကိုနှိပ်ပြီး လူအများဆုံးခေါ်ထားတဲ့သူတွေကိုလည်း ကြည့်နိုင်ပါတယ်ဗျာ။"
     )
@@ -251,8 +249,8 @@ async def handle_join_request(update: types.ChatJoinRequest):
         await bot.send_message(
             chat_id=uid,
             text=f"👋 မင်္ဂလာပါ {update.from_user.first_name}။\n\n"
-                 f"သင် Group ဝင်ခွင့်တောင်းထားတာကို လက်ခံရရှိပါတယ်၊ ဒါပေမယ့် စည်းကမ်းချက်အတိုင်း လူ ၅ ယောက် မပြည့်သေးပါဘူးခင်ဗျာ။\n"
-                 f"အောက်ကခလုတ်ကို နှိပ်ပြီး လူ (၅) ယောက်ပြည့်အောင် အရင်ဆုံး ခေါ်ပေးပါဦးနော်။\n\n"
+                 f"သင် Group ဝင်ခွင့်တောင်းထားတာကို လက်ခံရရှိပါတယ်၊ ဒါပေမယ့် စည်းကမ်းချက်အတိုင်း လူ ၁ ယောက် မပြည့်သေးပါဘူးခင်ဗျာ။\n"
+                 f"အောက်ကခလုတ်ကို နှိပ်ပြီး လူ (၁) ယောက်ပြည့်အောင် အရင်ဆုံး ခေါ်ပေးပါဦးနော်။\n\n"
                  f"📊 လက်ရှိ သင့်လင့်ခ်မှ ဝင်လာသူ: [{count}/{REQUIRED_SHARES}] ယောက်။",
             reply_markup=builder.as_markup()
         )
