@@ -9,11 +9,15 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiohttp import web
 from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
 
-# --- CONFIGURATION ---
-BOT_TOKEN = "8962171444:AAGfz63sO6HQwlWms51RbaRE5WlROji6aYk"      
+# --- CONFIGURATION (ပြင်ဆင်ရန်) ---
+BOT_TOKEN = "8463292751:AAFcS2jd50RPs79yrFdYcJvtvw5DMhAkDX8"      
 GROUP_ID = -1003913717685             
 REQUIRED_SHARES = 5                   
 GROUP_REQUEST_LINK = "https://t.me/+LFpe_NpuiO1mOTA1"
+
+# ပြသမည့် Content (ဒီနေရာမှာ မင်းပြချင်တဲ့ ဗီဒီယို သို့မဟုတ် ပုံရဲ့ Telegram File ID သို့မဟုတ် Direct Link ကို ထည့်ပါ)
+# လက်ရှိတွင် နမူနာစာသားဖြင့် ပြထားပါသည်
+LOCKED_CONTENT_TEXT = "🔥 VIP Group ထဲမှာ အခုလိုမျိုး လုံးဝ အလန်းစား ဗီဒီယိုတွေနဲ့ ပုံတွေ အများကြီး အပြည့်အစုံ ရှိနေပါပြီဗျာ!"
 
 WEBHOOK_HOST = "https://Myaibot-production.up.railway.app"
 WEBHOOK_PATH = f"/webhook/{BOT_TOKEN}"
@@ -29,7 +33,14 @@ dp = Dispatcher()
 # --- DATABASE SETUP ---
 conn = sqlite3.connect("group_gate.db", check_same_thread=False)
 cursor = conn.cursor()
-cursor.execute("CREATE TABLE IF NOT EXISTS users (user_id INTEGER PRIMARY KEY, count INTEGER DEFAULT 0, referred_by INTEGER)")
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS users (
+    user_id INTEGER PRIMARY KEY, 
+    username TEXT,
+    first_name TEXT,
+    count INTEGER DEFAULT 0, 
+    referred_by INTEGER
+)""")
 conn.commit()
 
 def get_user_count(uid):
@@ -37,20 +48,17 @@ def get_user_count(uid):
     res = cursor.fetchone()
     return res[0] if res else 0
 
-# --- NEW: AUTO-DELETE FOR GROUP ---
+# --- AUTO-DELETE (ဝင်စာ/ထွက်စာ/လင့်ခ် ဖျက်မည့်အပိုင်း) ---
 
-# ၁။ Group ထဲကို လူသစ်ဝင်လာတဲ့ စာတန်းတွေ (Service Messages) ကို ချက်ချင်းဖျက်ပေးမည့်အပိုင်း
-@dp.message(F.chat.id == GROUP_ID, F.new_chat_members)
-async def delete_join_message(message: types.Message):
+@dp.message(F.chat.id == GROUP_ID, F.new_chat_members | F.left_chat_member)
+async def delete_join_left_message(message: types.Message):
     try:
         await message.delete()
     except Exception:
         pass
 
-# ၂။ Group ထဲကို လာရှဲတဲ့ လင့်ခ် (Links) တွေကို ချက်ချင်းဖျက်ပေးမည့်အပိုင်း
 @dp.message(F.chat.id == GROUP_ID)
 async def delete_links(message: types.Message):
-    # စာသားထဲမှာဖြစ်ဖြစ်၊ ခလုတ်တွေထဲမှာဖြစ်ဖြစ် လင့်ခ်ပါလာရင် စစ်ထုတ်ခြင်း
     has_link = False
     if message.text and (re.search(r"t\.me", message.text, re.IGNORECASE) or message.entities):
         for entity in message.entities or []:
@@ -66,11 +74,14 @@ async def delete_links(message: types.Message):
 
     if has_link:
         try:
+            member = await bot.get_chat_member(chat_id=GROUP_ID, user_id=message.from_user.id)
+            if member.status in ["creator", "administrator"]:
+                return  
             await message.delete()
         except Exception:
             pass
 
-# --- BOT HANDLERS (REFERRAL & JOIN REQUEST) ---
+# --- BOT HANDLERS ---
 
 @dp.message(Command("start"))
 async def start_command(message: types.Message):
@@ -78,6 +89,8 @@ async def start_command(message: types.Message):
         return
         
     uid = message.from_user.id
+    uname = message.from_user.username or "No Username"
+    fname = message.from_user.first_name or "User"
     args = message.text.split()
     
     cursor.execute("SELECT user_id FROM users WHERE user_id=?", (uid,))
@@ -89,7 +102,7 @@ async def start_command(message: types.Message):
             try:
                 referrer_id = int(args[1].replace("ref_", ""))
                 if referrer_id != uid:
-                    cursor.execute("INSERT OR IGNORE INTO users (user_id, count) VALUES (?, 0)", (referrer_id,))
+                    cursor.execute("INSERT OR IGNORE INTO users (user_id, count, username, first_name) VALUES (?, 0, '', '')", (referrer_id,))
                     cursor.execute("UPDATE users SET count = count + 1 WHERE user_id=?", (referrer_id,))
                     conn.commit()
                     
@@ -105,7 +118,11 @@ async def start_command(message: types.Message):
             except ValueError:
                 pass
         
-        cursor.execute("INSERT INTO users (user_id, count, referred_by) VALUES (?, 0, ?)", (uid, referrer_id))
+        cursor.execute("INSERT INTO users (user_id, count, referred_by, username, first_name) VALUES (?, 0, ?, ?, ?)", (uid, referrer_id, uname, fname))
+        conn.commit()
+    else:
+        # ရှိပြီးသားလူဆိုလျှင်လည်း အချက်အလက် Update လုပ်ရန်
+        cursor.execute("UPDATE users SET username=?, first_name=? WHERE user_id=?", (uname, fname, uid))
         conn.commit()
 
     bot_user = await bot.get_me()
@@ -113,17 +130,63 @@ async def start_command(message: types.Message):
     count = get_user_count(uid)
 
     builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(text="🔓 ၁။ Group ဝင်ခွင့်တောင်းရန်", url=GROUP_REQUEST_LINK))
+    builder.row(InlineKeyboardButton(text="🔓 ၁။ VIP Group ဝင်ခွင့်တောင်းရန်", url=GROUP_REQUEST_LINK))
     builder.row(InlineKeyboardButton(text="📢 ၂။ အခြား Group များသို့ ရှဲရန်", url=share_url))
+    builder.row(InlineKeyboardButton(text="🏆 Top 10 Leaderboard ကိုကြည့်ရန်", callback_data="show_leaderboard"))
     
     await message.answer(
-        f"👋 ကြိုဆိုပါတယ်ဗျာ။ (ညစာ 1.0 Free Vip Gp) ထဲသို့ ဝင်ရောက်နိုင်ရန် အောက်ပါ အဆင့် (၂) ဆင့်အတိုင်း လုပ်ဆောင်ပေးရပါမယ် -\n\n"
-        f"၁။ (Group ဝဝင်ခွင့်တောင်းရန်) ခလုတ်ကိုနှိပ်ပြီး ဝင်ခွင့်အရင် တောင်းထားပါ။\n"
-        f"၂။ ပြီးနောက် (အခြား Group များသို့ ရှဲရန်) ခလုတ်ကိုနှိပ်ပြီး လူ (၅) ယောက်ခေါ်ပေးပါ။\n\n"
+        f"👋 မင်္ဂလာပါ {fname} ဗျာ။\n\n"
+        f"🎬 **Preview Content:**\n{LOCKED_CONTENT_TEXT}\n\n"
+        f"⚠️ **စည်းကမ်းချက်:** ဤအရာ၏ အပြည့်အစုံနှင့် VIP Group ထဲသို့ ဝင်ရောက်နိုင်ရန် အောက်ပါအတိုင်း လုပ်ဆောင်ပေးရပါမည် -\n"
+        f"၁။ **'၁။ VIP Group ဝင်ခွင့်တောင်းရန်'** ကိုနှိပ်ပြီး ဝင်ခွင့်တောင်းထားပါ။\n"
+        f"၂။ **'၂။ အခြား Group များသို့ ရှဲရန်'** ကိုနှိပ်ပြီး လူ (၅) ယောက်ခေါ်ပေးပါ။\n\n"
         f"📊 လက်ရှိ သင့်လင့်ခ်မှ ဝင်လာသူ: [{count}/{REQUIRED_SHARES}] ယောက်။\n"
-        f"⚠️ လူကြီးမင်းlinkကနေလူ ၅ယောက် ဝင်လာတာနဲ့ စနစ်က သင့်ကို Gpထဲ သို့ auto ထည့်ပေးသွားမှာ ဖြစ်ပါတယ်။",
+        f"🏆 အောက်က Leaderboard ခလုတ်ကိုနှိပ်ပြီး လူအများဆုံးခေါ်ထားတဲ့သူတွေကိုလည်း ကြည့်နိုင်ပါတယ်ဗျာ။",
         reply_markup=builder.as_markup()
     )
+
+# Leaderboard ခလုတ်နှိပ်လျှင် ထိပ်ဆုံး ၁၀ ယောက်စာရင်းပြပေးမည့်အပိုင်း
+@dp.callback_query(F.data == "show_leaderboard")
+async def leaderboard_callback(callback: types.CallbackQuery):
+    cursor.execute("SELECT first_name, count FROM users WHERE count > 0 ORDER BY count DESC LIMIT 10")
+    top_users = cursor.fetchall()
+    
+    text = "🏆 **ထိပ်ဆုံး လူအများဆုံးခေါ်နိုင်သူ ၁၀ ဦး (Top 10 Leaderboard)** 🏆\n\n"
+    if not top_users:
+        text += "လက်ရှိတွင် လူခေါ်ထားသူ မရှိသေးပါခင်ဗျာ။"
+    else:
+        for i, user in enumerate(top_users, 1):
+            name = user[0] if user[0] else "User"
+            text += f"{i}️⃣ {name} — {user[1]} ယောက်\n"
+            
+    text += "\n🔥 သင်လည်း ပထမရအောင် အမြန်ဆုံး ရှဲပြီး လူလိုက်ခေါ်လိုက်တော့နော်!"
+    
+    # ရှင်းလင်းသွားအောင် Message မှာ တန်းပြပေးခြင်း
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text="🔙 နောက်သို့", callback_data="back_to_start"))
+    await callback.message.edit_text(text, reply_markup=builder.as_markup())
+    await callback.answer()
+
+@dp.callback_query(F.data == "back_to_start")
+async def back_to_start_callback(callback: types.CallbackQuery):
+    # မူလ Start စာမျက်နှာသို့ ပြန်သွားရန်
+    uid = callback.from_user.id
+    count = get_user_count(uid)
+    bot_user = await bot.get_me()
+    share_url = f"https://t.me/share/url?url=https://t.me/{bot_user.username}?start=ref_{uid}&text=ညစာ 1.0 VIP Group ဝင်ချင်ရင် ဒီလင့်ခ်ကနေ ဝင်ပါဦး။"
+    
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text="🔓 ၁။ VIP Group ဝင်ခွင့်တောင်းရန်", url=GROUP_REQUEST_LINK))
+    builder.row(InlineKeyboardButton(text="📢 ၂။ အခြား Group များသို့ ရှဲရန်", url=share_url))
+    builder.row(InlineKeyboardButton(text="🏆 Top 10 Leaderboard ကိုကြည့်ရန်", callback_data="show_leaderboard"))
+    
+    await callback.message.edit_text(
+        f"👋 မင်္ဂလာပါ {callback.from_user.first_name} ဗျာ။\n\n"
+        f"🎬 **Preview Content:**\n{LOCKED_CONTENT_TEXT}\n\n"
+        f"📊 လက်ရှိ သင့်လင့်ခ်မှ ဝင်လာသူ: [{count}/{REQUIRED_SHARES}] ယောက်။",
+        reply_markup=builder.as_markup()
+    )
+    await callback.answer()
 
 @dp.chat_join_request()
 async def handle_join_request(update: types.ChatJoinRequest):
