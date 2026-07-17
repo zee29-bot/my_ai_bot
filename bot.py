@@ -10,7 +10,7 @@ from aiohttp import web
 from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
 
 # --- CONFIGURATION ---
-BOT_TOKEN = "8463292751:AAFcS2jd50RPs79yrFdYcJvtvw5DMhAkDX8"      
+BOT_TOKEN = "8962171444:AAGfz63sO6HQwlWms51RbaRE5WlROji6aYk"      
 GROUP_ID = -1003913717685             
 REQUIRED_SHARES = 5                   
 GROUP_REQUEST_LINK = "https://t.me/+LFpe_NpuiO1mOTA1"
@@ -117,11 +117,11 @@ async def start_command(message: types.Message):
     builder.row(InlineKeyboardButton(text="📢 ၂။ အခြား Group များသို့ ရှဲရန်", url=share_url))
     
     await message.answer(
-        f"👋 ကြိုဆိုပါတယ်ဗျာ။ **ညစာ 1.0 VIP Group** ထဲသို့ ဝင်ရောက်နိုင်ရန် အောက်ပါ အဆင့် (၂) ဆင့်အတိုင်း လုပ်ဆောင်ပေးရပါမယ် -\n\n"
-        f"၁။ အောက်က **'၁။ Group ဝင်ခွင့်တောင်းရန်'** ခလုတ်ကိုနှိပ်ပြီး ဝင်ခွင့်အရင် တောင်းထားပါ။\n"
-        f"၂။ ပြီးနောက် **'၂။ အခြား Group များသို့ ရှဲရန်'** ခလုတ်ကိုနှိပ်ပြီး လူ (၅) ယောက်ခေါ်ပေးပါ။\n\n"
+        f"👋 ကြိုဆိုပါတယ်ဗျာ။ (ညစာ 1.0 Free Vip Gp) ထဲသို့ ဝင်ရောက်နိုင်ရန် အောက်ပါ အဆင့် (၂) ဆင့်အတိုင်း လုပ်ဆောင်ပေးရပါမယ် -\n\n"
+        f"၁။ (Group ဝဝင်ခွင့်တောင်းရန်) ခလုတ်ကိုနှိပ်ပြီး ဝင်ခွင့်အရင် တောင်းထားပါ။\n"
+        f"၂။ ပြီးနောက် (အခြား Group များသို့ ရှဲရန်) ခလုတ်ကိုနှိပ်ပြီး လူ (၅) ယောက်ခေါ်ပေးပါ။\n\n"
         f"📊 လက်ရှိ သင့်လင့်ခ်မှ ဝင်လာသူ: [{count}/{REQUIRED_SHARES}] ယောက်။\n"
-        f"⚠️ လူ ၅ ယောက် တကယ်ဝင်လာတာနဲ့ စနစ်က သင့်ကို Group ထဲ Auto အတည်ပြု (Approve) ပေးမှာ ဖြစ်ပါတယ်။",
+        f"⚠️ လူကြီးမင်းlinkကနေလူ ၅ယောက် ဝင်လာတာနဲ့ စနစ်က သင့်ကို Gpထဲ သို့ တကယ်ဝင်လာတာနဲ့ auto ထည့်ပေးမှာ ဖြစ်ပါတယ်။",
         reply_markup=builder.as_markup()
     )
 
