@@ -39,7 +39,7 @@ dp = Dispatcher()
 # --- DATABASE ---
 conn = sqlite3.connect("group_gate.db", check_same_thread=False)
 cursor = conn.cursor()
-cursor.execute("CREATE TABLE IF NOT EXISTS users (user_id INTEGER PRIMARY KEY, username TEXT, first_name TEXT, count INTEGER DEFAULT 0, referred_by INTEGER)")
+cursor.execute("CREATE TABLE IF NOT EXISTS users (user_id INTEGER PRIMARY KEY, username TEXT, first_name TEXT, count INTEGER DEFAULT 0, referred_by INTEGER, has_requested INTEGER DEFAULT 0)")
 cursor.execute("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)")
 conn.commit()
 
@@ -71,7 +71,6 @@ async def send_user_home(uid, fname):
     selected_text = random.choice(SHARE_MESSAGES)
     bot_link = f"https://t.me/{bot_user.username}?start=ref_{uid}"
     
-    # 🌟 ပုံလင့်ခ်တွေ အကုန်ဖြုတ်လိုက်ပါပြီ။ စာသားနဲ့ လင့်ခ်ပဲ သန့်သန့်လေး ရှဲသွားမှာပါ
     share_url = f"https://t.me/share/url?url={urllib.parse.quote(bot_link)}&text={urllib.parse.quote(selected_text)}"
 
     builder = InlineKeyboardBuilder()
@@ -88,7 +87,6 @@ async def send_user_home(uid, fname):
         f"လက်ရှိအခြေအနေ: {count}/1 ယောက်।"
     )
     
-    # 🎬 ၂၀ စက္ကန့်ပြ ဗီဒီယိုစနစ် (ဗီဒီယိုရှိရင် ပြပြီး ပြန်ဖျက်ပေးမယ့်အပိုင်း)
     video_to_send = get_setting("latest_video")
     if video_to_send:
         try:
@@ -104,7 +102,7 @@ async def send_admin_home(uid):
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text="📊 ကိန်းဂဏန်းများကြည့်ရန်", callback_data="admin_stats"))
     builder.row(InlineKeyboardButton(text="📢 အားလုံးဆီ စာပို့ရန် (Broadcast)", callback_data="admin_broadcast"))
-    await bot.send_message(chat_id=uid, text="👑 Admin Control Panel 👑\n\nလုပ်ဆောင်လိုသည့် လုပ်ငန်းစဉ်ကို ရွေးချယ်ပါ။\n\n💡 <b>သိကောင်းစရာ:</b>\n- ဗီဒီယိုပို့လိုက်ရင် ၂၀ စက္ကန့်ပြစနစ်ထဲ သိမ်းသွားပါမယ်။", reply_markup=builder.as_markup())
+    await bot.send_message(chat_id=uid, text="👑 Admin Control Panel 👑", reply_markup=builder.as_markup())
 
 @dp.message(Command("start"))
 async def start_command(message: types.Message):
@@ -114,22 +112,47 @@ async def start_command(message: types.Message):
         await send_admin_home(uid)
         return
 
-    cursor.execute("INSERT OR IGNORE INTO users (user_id, username, first_name) VALUES (?, ?, ?)", 
-                   (uid, message.from_user.username or "", message.from_user.first_name or "User"))
+    # User ရှိမရှိ အရင်စစ်မယ်
+    cursor.execute("SELECT referred_by FROM users WHERE user_id=?", (uid,))
+    user_exists = cursor.fetchone()
+    
+    if not user_exists:
+        cursor.execute("INSERT OR IGNORE INTO users (user_id, username, first_name) VALUES (?, ?, ?)", 
+                       (uid, message.from_user.username or "", message.from_user.first_name or "User"))
     
     args = message.text.split()
+    # 🎯 သေချာပေါက် တခြားသူရဲ့ Link ထဲကနေ ဝင်လာတာ ဟုတ်မဟုတ် အရင်ဆုံးစစ်ဆေးခြင်း
     if len(args) > 1 and args[1].startswith("ref_"):
         try:
             referrer_id = int(args[1].split("_")[1])
-            if referrer_id != uid:
-                cursor.execute("SELECT referred_by FROM users WHERE user_id=?", (uid,))
-                already_referred = cursor.fetchone()
-                if already_referred and already_referred[0] is None:
-                    cursor.execute("UPDATE users SET referred_by=? WHERE user_id=?", (referrer_id, uid))
-                    cursor.execute("UPDATE users SET count = count + 1 WHERE user_id=?", (referrer_id,))
-                    conn.commit()
+            # ကိုယ့်လင့်ခ်ကိုယ် နှိပ်တာမဟုတ်မှ၊ ပြီးတော့ တခြားသူရဲ့ လင့်ခ်အောက်ကို တစ်ခါမှ မဝင်ရသေးတဲ့ လူသစ်အစစ်ဖြစ်မှ
+            if referrer_id != uid and (not user_exists or user_exists[0] is None):
+                cursor.execute("UPDATE users SET referred_by=? WHERE user_id=?", (referrer_id, uid))
+                cursor.execute("UPDATE users SET count = count + 1 WHERE user_id=?", (referrer_id,))
+                conn.commit()
+                
+                # လင့်ခ်ပိုင်ရှင်ရဲ့ လက်ရှိ ဖိတ်ခေါ်ပြီးဦးရေနဲ့ Request အခြေအနေကို ယူမယ်
+                ref_count = get_user_count(referrer_id)
+                cursor.execute("SELECT has_requested FROM users WHERE user_id=?", (referrer_id,))
+                req_res = cursor.fetchone()
+                has_req = req_res[0] if req_res else 0
+                
+                # 🔥 စည်းကမ်းချက်ပြည့်ပြီး Group ဝင်ခွင့်ပါတောင်းထားရင် ချက်ချင်း Approve လုပ်ပေးမယ်
+                if ref_count >= REQUIRED_SHARES and has_req == 1:
                     try:
-                        await bot.send_message(chat_id=referrer_id, text="🎉 သင့်လင့်ခ်မှ လူသစ်တစ်ယောက် ဝင်ရောက်လာပါပြီ။")
+                        await bot.approve_chat_join_request(chat_id=GROUP_ID, user_id=referrer_id)
+                        join_builder = InlineKeyboardBuilder()
+                        join_builder.row(InlineKeyboardButton(text="VIP Group သို့ သွားရန်", url=GROUP_REQUEST_LINK))
+                        await bot.send_message(
+                            chat_id=referrer_id, 
+                            text="🎉 ဂုဏ်ယူပါတယ်! သင့်လင့်ခ်မှတစ်ဆင့် လူသစ်ဝင်ရောက်လာပြီး စည်းကမ်းချက်ပြည့်မီသွားသဖြင့် သင့်ကို VIP Group ထဲသို့ အလိုအလျောက် Approve လုပ်ပြီး ထည့်ပေးလိုက်ပါပြီဗျာ။",
+                            reply_markup=join_builder.as_markup()
+                        )
+                    except Exception as e:
+                        logging.error(f"Approve error in start: {e}")
+                else:
+                    try:
+                        await bot.send_message(chat_id=referrer_id, text=f"🎉 သင့်လင့်ခ်မှ လူသစ်တစ်ယောက် ဝင်ရောက်လာပါပြီ။ (လက်ရှိ: {ref_count}/{REQUIRED_SHARES} ယောက်)\n\n⚠️ မှတ်ချက် - လူပြည့်သော်လည်း VIP Group ဝင်ခွင့်တောင်းရန် ခလုတ်ကို မနှိပ်ရသေးပါက အရင်နှိပ်ထားပေးပါ။")
                     except: pass
         except Exception as e:
             logging.error(f"Referral error: {e}")
@@ -141,14 +164,14 @@ async def start_command(message: types.Message):
 @dp.message(F.chat.type == "private", F.from_user.id == ADMIN_ID, F.video)
 async def save_admin_preview_video(message: types.Message):
     set_setting("latest_video", message.video.file_id)
-    await message.reply("✅ Preview ဗီဒီယိုအသစ်ကို သိမ်းဆည်းလိုက်ပါပြီ။ User အသစ်တွေ /start နှိပ်ရင် ၂၀ စက္ကန့် ပေါ်ပါလိမ့်မယ်။")
+    await message.reply("✅ Preview ဗီဒီယိုအသစ်ကို သိမ်းဆည်းလိုက်ပါပြီ။")
 
 @dp.message(F.chat.type == "private", F.from_user.id == ADMIN_ID, F.reply_to_message)
 async def do_broadcast(message: types.Message):
     if "User အားလုံးဆီ ပို့ချင်တဲ့စာသား" not in message.reply_to_message.text: return
     cursor.execute("SELECT user_id FROM users")
     users = cursor.fetchall()
-    status_msg = await message.reply(f"User စုစုပေါင်း {len(users)} ယောက်ဆီသို့ စတင်ပို့ဆောင်နေပါပြီ...")
+    status_msg = await message.reply("စတင်ပို့ဆောင်နေပါပြီ...")
     success, fail = 0, 0
     for user in users:
         uid = user[0]
@@ -158,7 +181,7 @@ async def do_broadcast(message: types.Message):
             await asyncio.sleep(0.05)
         except Exception:
             fail += 1
-    await status_msg.edit_text(f"Broadcast ပို့ဆောင်ပြီးပါပြီ။\n\nအောင်မြင်: {success}\nကျရှုံး: {fail}")
+    await status_msg.edit_text(f"Broadcast ပြီးပါပြီ။\n\nအောင်မြင်: {success}\nကျရှုံး: {fail}")
 
 # --- ADMIN CALLBACK PANEL ACTIONS ---
 @dp.callback_query(F.data == "admin_stats")
@@ -169,11 +192,7 @@ async def admin_stats_callback(callback: types.CallbackQuery):
     cursor.execute("SELECT COUNT(*) FROM users WHERE count > 0")
     active_sharers = cursor.fetchone()[0]
     
-    stats_text = (
-        f"Admin Control Panel\n\n"
-        f"စုစုပေါင်း User အရေအတွက်: {total_users} ယောက်\n"
-        f"အနည်းဆုံး လူ ၁ ယောက်ခေါ်ထားသူ: {active_sharers} ယောက်"
-    )
+    stats_text = f"စုစုပေါင်း User: {total_users} ယောက်\nအနည်းဆုံး လူ ၁ ယောက်ခေါ်ထားသူ: {active_sharers} ယောက်"
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text="နောက်သို့", callback_data="admin_back"))
     await callback.message.edit_text(stats_text, reply_markup=builder.as_markup())
@@ -182,7 +201,7 @@ async def admin_stats_callback(callback: types.CallbackQuery):
 @dp.callback_query(F.data == "admin_broadcast")
 async def admin_broadcast_callback(callback: types.CallbackQuery):
     if callback.from_user.id != ADMIN_ID: return
-    await callback.message.edit_text("Broadcast စနစ်:\n\nUser အားလုံးဆီ ပို့ချင်တဲ့စာသား၊ ပုံ သို့မဟုတ် ဗီဒီယိုကို ဒီ Message ကို Reply ပြန်ပြီး ပို့ပေးပါ။")
+    await callback.message.edit_text("Broadcast စနစ် - စာသား သို့မဟုတ် ပုံကို Reply ပြန်ပြီး ပို့ပေးပါ။")
     await callback.answer()
 
 @dp.callback_query(F.data == "admin_back")
@@ -222,20 +241,28 @@ async def user_back_callback(callback: types.CallbackQuery):
     await send_user_home(callback.from_user.id, callback.from_user.first_name)
     await callback.answer()
 
+# --- CHAT JOIN REQUEST ---
 @dp.chat_join_request()
 async def handle_join_request(update: types.ChatJoinRequest):
     uid = update.from_user.id
+    
+    cursor.execute("UPDATE users SET has_requested = 1 WHERE user_id=?", (uid,))
+    conn.commit()
+    
     count = get_user_count(uid)
+    
     if count >= REQUIRED_SHARES:
         try:
             await bot.approve_chat_join_request(chat_id=GROUP_ID, user_id=uid)
+            join_builder = InlineKeyboardBuilder()
+            join_builder.row(InlineKeyboardButton(text="VIP Group သို့ သွားရန်", url=GROUP_REQUEST_LINK))
+            await bot.send_message(chat_id=uid, text="🎉 သင်က စည်းကမ်းချက်အတိုင်း လူပြည့်ပြီးဖြစ်လို့ VIP Group ထဲ တန်းဝင်လို့ရပါပြီဗျာ။", reply_markup=join_builder.as_markup())
             return
         except: pass
         
     bot_user = await bot.get_me()
     selected_text = random.choice(SHARE_MESSAGES)
     bot_link = f"https://t.me/{bot_user.username}?start=ref_{uid}"
-    
     share_url = f"https://t.me/share/url?url={urllib.parse.quote(bot_link)}&text={urllib.parse.quote(selected_text)}"
     
     builder = InlineKeyboardBuilder()
