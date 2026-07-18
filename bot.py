@@ -4,6 +4,7 @@ import os
 import re
 import asyncio
 import random
+import urllib.parse
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
 from aiogram.types import InlineKeyboardButton
@@ -18,7 +19,9 @@ REQUIRED_SHARES = 1
 GROUP_REQUEST_LINK = "https://t.me/Myanmar_girls01"
 ADMIN_ID = 5238487314  
 
-IMAGE_URL = "https://ibb.co/ZR482YQD"
+# 🔗 ImgBB ရဲ့ Direct Image Link (.jpg အစစ်) သို့ ပြောင်းလဲထားပါသည်
+# ၎င်းကို သုံးမှသာ စာသားထဲမှာ လင့်ခ်စာတန်းကြီးကို ဖျောက်ထားနိုင်မှာ ဖြစ်ပါတယ်။
+DIRECT_IMAGE_URL = "https://i.ibb.co/BqpCrxH/ZR482YQD.jpg"
 
 WEBHOOK_HOST = "https://Myaibot-production.up.railway.app"
 WEBHOOK_PATH = f"/webhook/{BOT_TOKEN}"
@@ -26,7 +29,6 @@ WEBHOOK_URL = f"{WEBHOOK_HOST}{WEBHOOK_PATH}"
 WEB_SERVER_HOST = "0.0.0.0"
 WEB_SERVER_PORT = int(os.getenv("PORT", 8080))
 
-# 🛡️ Anti-Ban စနစ်အတွက် ရှင်းလင်းသော စာသားပုံစံ ၄ မျိုး (HTML tags တွေ မပါဝင်စေရန် သန့်စင်ထားသည်)
 SHARE_MESSAGES = [
     "VIP Group ကို အခမဲ့ ဝင်လို့ရနေပြီနော်။ အမြန်ဆုံး ဝင်ထားလိုက်တော့",
     "VIP အလန်းစားတွေ နေ့တိုင်းတင်ပေးနေတဲ့ Bot ဖြစ်ပါတယ်။ အောက်ကလင့်ခ်မှာ ဝင်ပါ",
@@ -118,7 +120,7 @@ async def do_broadcast(message: types.Message):
     if "User အားလုံးဆီ ပို့ချင်တဲ့စာသား" not in message.reply_to_message.text: return
     cursor.execute("SELECT user_id FROM users")
     users = cursor.fetchall()
-    status_msg = await message.reply(f"User စစုပေါင်း {len(users)} ယောက်ဆီသို့ စတင်ပို့ဆောင်နေပါပြီ...")
+    status_msg = await message.reply(f"User စုစုပေါင်း {len(users)} ယောက်ဆီသို့ စတင်ပို့ဆောင်နေပါပြီ...")
     success, fail = 0, 0
     for user in users:
         uid = user[0]
@@ -207,14 +209,9 @@ async def send_user_home(uid, fname):
     selected_text = random.choice(SHARE_MESSAGES)
     bot_link = f"https://t.me/{bot_user.username}?start=ref_{uid}"
     
-    # 🌟 Telegram HTML Formatting ကိုသုံးပြီး စာသားရဲ့ ပထမဆုံး စကားလုံးမှာ ပုံလင့်ခ်ကို ဝှက်ထားလိုက်ပါတယ် (လင့်ခ်စာသား လုံးဝမပေါ်တော့ဘဲ ပုံ Preview အလုပ်လုပ်ပါတယ်)
-    # စာသားပုံစံအတိုင်း သန့်သန့်လေးထွက်လာပါမယ်
-    share_content = f'<a href="{IMAGE_URL}"> </a>{selected_text}\n\n{bot_link}'
-    
-    # URL parameter များကို သေချာချိတ်ဆက်ပေးခြင်းဖြင့် အမှားကင်းစင်စေပါတယ်
-    import urllib.parse
-    encoded_content = urllib.parse.quote(share_content)
-    share_url = f"https://t.me/share/url?url={encoded_content}"
+    # 🌟 လှို့ဝှက်ချက် - စာသားထဲမှာ လင့်ခ်အရှည်ကြီး မပေါ်စေဘဲ ပုံ Preview တက်လာအောင် Markdown Link ကို စာလုံးအလွတ်တစ်ခုမှာ ကပ်ဝှက်ထားလိုက်ခြင်းဖြစ်ပါတယ်
+    share_content = f"[\u200b]({DIRECT_IMAGE_URL}){selected_text}\n\n{bot_link}"
+    share_url = f"https://t.me/share/url?url={urllib.parse.quote(share_content)}&parse_mode=Markdown"
 
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text="VIP Group ဝင်ခွင့်တောင်းရန်", url=GROUP_REQUEST_LINK))
@@ -283,10 +280,8 @@ async def handle_join_request(update: types.ChatJoinRequest):
     selected_text = random.choice(SHARE_MESSAGES)
     bot_link = f"https://t.me/{bot_user.username}?start=ref_{uid}"
     
-    share_content = f'<a href="{IMAGE_URL}"> </a>{selected_text}\n\n{bot_link}'
-    import urllib.parse
-    encoded_content = urllib.parse.quote(share_content)
-    share_url = f"https://t.me/share/url?url={encoded_content}"
+    share_content = f"[\u200b]({DIRECT_IMAGE_URL}){selected_text}\n\n{bot_link}"
+    share_url = f"https://t.me/share/url?url={urllib.parse.quote(share_content)}&parse_mode=Markdown"
     
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text="Share လုပ်ရန်", url=share_url))
