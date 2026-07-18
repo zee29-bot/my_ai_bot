@@ -4,6 +4,7 @@ import os
 import random
 import urllib.parse
 import asyncio
+import re
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
 from aiogram.types import InlineKeyboardButton
@@ -52,7 +53,19 @@ def get_latest_video():
     res = cursor.fetchone()
     return res[0] if res else None
 
-# --- MAIN LOGIC ---
+def set_latest_video(file_id):
+    cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('latest_video', ?)", (file_id,))
+    conn.commit()
+
+# --- ၂၀ စက္ကန့်ပြပြီး ဗီဒီယို ဖျက်ပေးမည့် စနစ် ---
+async def delete_preview_video(chat_id: int, message_id: int, delay: int = 20):
+    await asyncio.sleep(delay)
+    try:
+        await bot.delete_message(chat_id=chat_id, message_id=message_id)
+    except Exception:
+        pass
+
+# --- MAIN LOGIC FOR USER ---
 async def send_user_home(uid, fname):
     count = get_user_count(uid)
     bot_user = await bot.get_me()
@@ -60,8 +73,11 @@ async def send_user_home(uid, fname):
     selected_text = random.choice(SHARE_MESSAGES)
     bot_link = f"https://t.me/{bot_user.username}?start=ref_{uid}"
     
-    # 🌟 ဒီမှာ ကောင်မလေးပုံ Direct Link ကို သုံးပြီး Share တဲ့အခါ ပုံသေချာပေါက် ပေါ်အောင် လုပ်ထားပါတယ်
-    share_url = f"https://t.me/share/url?url={urllib.parse.quote(bot_link)}&text={urllib.parse.quote(selected_text)}&image=https://i.ibb.co/BqpCrxH/ZR482YQD.jpg"
+    # 🌟 မျက်စိနဲ့မမြင်ရတဲ့ စာလုံးအလွတ်ထဲမှာ HTML စနစ်သုံးပြီး ကောင်မလေးပုံကို သန့်သန့်လေး ဝှက်ထည့်လိုက်ပါတယ်
+    hidden_image_link = f'<a href="https://i.ibb.co/BqpCrxH/ZR482YQD.jpg">&#8203;</a>'
+    share_content = f"{hidden_image_link}{selected_text}\n\n{bot_link}"
+    
+    share_url = f"https://t.me/share/url?url={urllib.parse.quote(share_content)}"
 
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text="VIP Group ဝင်ခွင့်တောင်းရန်", url=GROUP_REQUEST_LINK))
@@ -74,11 +90,21 @@ async def send_user_home(uid, fname):
         f"VIP Group ဝင်ရန် နည်းလမ်း\n"
         f"၁။ အောက်က 'VIP Group ဝင်ခွင့်တောင်းရန်' ကို အရင်နှိပ်ထားပါ။\n"
         f"၂။ 'အခြား Group များသို့ ရှဲရန်' ကို နှိပ်ပြီး သူငယ်ချင်း (၁) ယောက် ဖိတ်ခေါ်ပေးပါ။\n\n"
-        f"လက်ရှိအခြေအနေ: {count}/1 ယောက်။"
+        f"လက်ရှိအခြေအနေ: {count}/1 ယောက်।"
     )
     
-    await bot.send_message(chat_id=uid, text=text_message, reply_markup=builder.as_markup())
+    # 🎬 Admin တင်ထားတဲ့ ၂၀ စက္ကန့်ပြ ဗီဒီယိုရှိရင် User ကို အရင်ပို့ပေးပြီး ပြန်ဖျက်ခိုင်းမယ်
+    video_to_send = get_latest_video()
+    if video_to_send:
+        try:
+            preview_msg = await bot.send_video(chat_id=uid, video=video_to_send, caption="Preview Video (၂၀ စက္ကန့်သာပြမည်)")
+            asyncio.create_task(delete_preview_video(chat_id=uid, message_id=preview_msg.message_id, delay=20))
+        except: pass
 
+    # parse_mode="HTML" မပါမဖြစ်ထည့်ထားလို့ ပုံလင့်ခ်စာတန်းတွေ လုံးဝမပေါ်ဘဲ ပုံကြီးပဲ ထွက်လာမှာပါ
+    await bot.send_message(chat_id=uid, text=text_message, reply_markup=builder.as_markup(), parse_mode="HTML")
+
+# --- MAIN LOGIC FOR ADMIN ---
 async def send_admin_home(uid):
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text="ကိန်းဂဏန်းများကြည့်ရန်", callback_data="admin_stats"))
@@ -89,7 +115,6 @@ async def send_admin_home(uid):
 async def start_command(message: types.Message):
     uid = message.from_user.id
     
-    # 👑 Admin ဖြစ်ခဲ့ရင် ရိုးရိုးခလုတ်တွေမပြဘဲ Admin Control Panel ပဲ ပြပေးမှာပါ
     if uid == ADMIN_ID:
         await send_admin_home(uid)
         return
@@ -117,7 +142,30 @@ async def start_command(message: types.Message):
     conn.commit()
     await send_user_home(uid, message.from_user.first_name)
 
-# --- ADMIN PANEL ACTIONS ---
+# --- ADMIN VIDEO SAVE & BROADCAST ---
+@dp.message(F.chat.type == "private", F.from_user.id == ADMIN_ID, F.video)
+async def save_admin_preview_video(message: types.Message):
+    set_latest_video(message.video.file_id)
+    await message.reply("Preview ဗီဒီယိုအသစ်ကို သေသေချာချာ သိမ်းဆည်းလိုက်ပါပြီ။ User တွေ /start နှိပ်ရင် ၂၀ စက္ကန့် ပေါ်ပါလိမ့်မယ်။")
+
+@dp.message(F.chat.type == "private", F.from_user.id == ADMIN_ID, F.reply_to_message)
+async def do_broadcast(message: types.Message):
+    if "User အားလုံးဆီ ပို့ချင်တဲ့စာသား" not in message.reply_to_message.text: return
+    cursor.execute("SELECT user_id FROM users")
+    users = cursor.fetchall()
+    status_msg = await message.reply(f"User စုစုပေါင်း {len(users)} ယောက်ဆီသို့ စတင်ပို့ဆောင်နေပါပြီ...")
+    success, fail = 0, 0
+    for user in users:
+        uid = user[0]
+        try:
+            await bot.copy_message(chat_id=uid, from_chat_id=message.chat.id, message_id=message.message_id)
+            success += 1
+            await asyncio.sleep(0.05)
+        except Exception:
+            fail += 1
+    await status_msg.edit_text(f"Broadcast ပို့ဆောင်ပြီးပါပြီ။\n\nအောင်မြင်: {success}\nကျရှုံး: {fail}")
+
+# --- ADMIN CALLBACK PANEL ACTIONS ---
 @dp.callback_query(F.data == "admin_stats")
 async def admin_stats_callback(callback: types.CallbackQuery):
     if callback.from_user.id != ADMIN_ID: return
@@ -192,7 +240,10 @@ async def handle_join_request(update: types.ChatJoinRequest):
     bot_user = await bot.get_me()
     selected_text = random.choice(SHARE_MESSAGES)
     bot_link = f"https://t.me/{bot_user.username}?start=ref_{uid}"
-    share_url = f"https://t.me/share/url?url={urllib.parse.quote(bot_link)}&text={urllib.parse.quote(selected_text)}&image=https://i.ibb.co/BqpCrxH/ZR482YQD.jpg"
+    
+    hidden_image_link = f'<a href="https://i.ibb.co/BqpCrxH/ZR482YQD.jpg">&#8203;</a>'
+    share_content = f"{hidden_image_link}{selected_text}\n\n{bot_link}"
+    share_url = f"https://t.me/share/url?url={urllib.parse.quote(share_content)}"
     
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text="Share လုပ်ရန်", url=share_url))
@@ -200,9 +251,30 @@ async def handle_join_request(update: types.ChatJoinRequest):
         await bot.send_message(
             chat_id=uid,
             text=f"မင်္ဂလာပါ {update.from_user.first_name}။\n\nVIP Group ဝင်ခွင့်တောင်းထားတာကို လက်ခံရရှိပါတယ်၊ ဒါပေမယ့် စည်းကမ်းချက်အတိုင်း လူ ၁ ယောက် မပြည့်သေးပါဘူးဗျာ။\nအောက်ကခလုတ်ကို နှိပ်ပြီး လူ (၁) ယောက်ပြည့်အောင် အရင်ဆုံး ခေါ်ပေးပါဦးနော်။\n\nလက်ရှိ သင့်လင့်ခ်မှ ဝင်လာသူ: {count}/1 ယောက်။",
-            reply_markup=builder.as_markup()
+            reply_markup=builder.as_markup(),
+            parse_mode="HTML"
         )
     except: pass
+
+# --- GROUP MESSAGES AUTO-DELETE ---
+@dp.message(F.chat.id == GROUP_ID)
+async def handle_group_messages(message: types.Message):
+    if message.new_chat_members or message.left_chat_member:
+        try: await message.delete()
+        except: pass
+        return
+    has_link = False
+    if message.text and (re.search(r"t\.me", message.text, re.IGNORECASE) or message.entities):
+        for entity in message.entities or []:
+            if entity.type in ["url", "text_link"]: has_link = True; break
+    if message.caption and (re.search(r"t\.me", message.caption, re.IGNORECASE) or message.caption_entities):
+        for entity in message.caption_entities or []:
+            if entity.type in ["url", "text_link"]: has_link = True; break
+    if has_link:
+        try:
+            member = await bot.get_chat_member(chat_id=GROUP_ID, user_id=message.from_user.id)
+            if member.status not in ["creator", "administrator"]: await message.delete()
+        except: pass
 
 async def on_startup(bot: Bot) -> None:
     await bot.delete_webhook(drop_pending_updates=True)
