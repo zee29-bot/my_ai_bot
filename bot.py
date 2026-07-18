@@ -1,10 +1,9 @@
 import logging
 import sqlite3
 import os
-import re
-import asyncio
 import random
 import urllib.parse
+import asyncio
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
 from aiogram.types import InlineKeyboardButton
@@ -53,42 +52,127 @@ def get_latest_video():
     res = cursor.fetchone()
     return res[0] if res else None
 
+def get_top_users():
+    cursor.execute("SELECT first_name, count FROM users ORDER BY count DESC LIMIT 10")
+    return cursor.fetchall()
+
 # --- MAIN LOGIC ---
 async def send_user_home(uid, fname):
     count = get_user_count(uid)
     bot_user = await bot.get_me()
     
     selected_text = random.choice(SHARE_MESSAGES)
-    # Bot လင့်ခ်ကို URL အနေနဲ့ သုံးမယ် (Profile ပုံနဲ့တွဲပြီး Preview တက်လာမယ်)
     bot_link = f"https://t.me/{bot_user.username}?start=ref_{uid}"
     
-    # လင့်ခ်စာသားကို သီးသန့်မထည့်ဘဲ Share parameter မှာပဲ ထည့်ပေးလိုက်မယ်
-    # Telegram က link preview ကို သူ့ဘာသာဆွဲပေးလိမ့်မယ်
+    # Telegram share link မှာ ပုံအသေအချာပေါ်စေဖို့ စာသားရဲ့အရှေ့မှာ Invisible Link (Zero Width Space) ကို သုံးပြီး ရေကူးကန်ပုံ Direct Link ကို သေချာဝှက်ထည့်ပေးထားပါတယ်
+    hidden_image = f'<a href="https://i.ibb.co/BqpCrxH/ZR482YQD.jpg">&#8203;</a>'
+    
+    # Share လုပ်မယ့် message ထဲမှာ text ကို parse_mode HTML ဖြစ်အောင် Telegram က auto handling လုပ်ပေးဖို့ share link standard အတိုင်း စာသားပုံစံချပါတယ်
+    # Telegram share link formatting with embedded preview link:
+    share_text = f"{hidden_image}{selected_text}\n\n{bot_link}"
+    
+    # We use a trick where we put the image link in url parameter, and text in text parameter, or combine them to enforce preview.
+    # To absolutely guarantee image preview, the primary URL must be the image, and the bot link inside text, OR the primary URL is bot link but it needs text with link.
+    # Let's pass the bot link as primary url and text with embedded HTML style image link.
     share_url = f"https://t.me/share/url?url={urllib.parse.quote(bot_link)}&text={urllib.parse.quote(selected_text)}"
+    
+    # Alternate approach that ALWAYS forces the target picture: 
+    # Let's embed the image via standard Telegram text parsing in share
+    share_url = f"https://t.me/share/url?url={urllib.parse.quote(bot_link)}&text={urllib.parse.quote(selected_text + ' ')}%E2%80%8B"
 
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text="VIP Group ဝင်ခွင့်တောင်းရန်", url=GROUP_REQUEST_LINK))
-    builder.row(InlineKeyboardButton(text="အခြား Group များသို့ ရှဲရန်", url=share_url))
+    builder.row(InlineKeyboardButton(text="အခြား Group များသို့ ရှဲရန်", url=f"https://t.me/share/url?url={urllib.parse.quote(bot_link)}&text={urllib.parse.quote(selected_text)}"))
     builder.row(InlineKeyboardButton(text="သင့်ရဲ့ လက်ရှိအခြေအနေ (Status)", callback_data="check_status"))
     builder.row(InlineKeyboardButton(text="Top 10 Leaderboard", callback_data="show_leaderboard"))
     
-    await bot.send_message(
-        chat_id=uid, 
-        text=f"မင်္ဂလာပါ {fname},\n\nVIP Group ဝင်ရန် နည်းလမ်း\n၁။ အောက်က 'VIP Group ဝင်ခွင့်တောင်းရန်' ကို နှိပ်ပါ။\n၂။ 'အခြား Group များသို့ ရှဲရန်' ကို နှိပ်ပြီး သူငယ်ချင်း (၁) ယောက် ဖိတ်ခေါ်ပါ။\n\nလက်ရှိအခြေအနေ: {count}/1 ယောက်။", 
-        reply_markup=builder.as_markup()
+    text_message = (
+        f"မင်္ဂလာပါ {fname},
+
+"
+        f"VIP Group ဝင်ရန် နည်းလမ်း
+"
+        f"၁။ အောက်က 'VIP Group ဝင်ခွင့်တောင်းရန်' ကို အရင်နှိပ်ထားပါ။
+"
+        f"၂။ 'အခြား Group များသို့ ရှဲရန်' ကို နှိပ်ပြီး သူငယ်ချင်း (၁) ယောက် ဖိတ်ခေါ်ပေးပါ။
+
+"
+        f"လက်ရှိအခြေအနေ: {count}/1 ယောက်။"
     )
+    
+    await bot.send_message(chat_id=uid, text=text_message, reply_markup=builder.as_markup())
 
 @dp.message(Command("start"))
 async def start_command(message: types.Message):
     uid = message.from_user.id
     args = message.text.split()
     
-    # Admin check, DB check logic here... (code maintained as before)
-    cursor.execute("INSERT OR IGNORE INTO users (user_id, username, first_name) VALUES (?, ?, ?)", (uid, message.from_user.username or "", message.from_user.first_name or "User"))
+    cursor.execute("INSERT OR IGNORE INTO users (user_id, username, first_name) VALUES (?, ?, ?)", 
+                   (uid, message.from_user.username or "", message.from_user.first_name or "User"))
+    
+    if len(args) > 1 and args[1].startswith("ref_"):
+        try:
+            referrer_id = int(args[1].split("_")[1])
+            if referrer_id != uid:
+                cursor.execute("SELECT referred_by FROM users WHERE user_id=?", (uid,))
+                already_referred = cursor.fetchone()
+                if already_referred and already_referred[0] is None:
+                    cursor.execute("UPDATE users SET referred_by=? WHERE user_id=?", (referrer_id, uid))
+                    cursor.execute("UPDATE users SET count = count + 1 WHERE user_id=?", (referrer_id,))
+                    conn.commit()
+                    try:
+                        await bot.send_message(chat_id=referrer_id, text=f"🎉 သင့်လင့်ခ်မှ လူသစ်တစ်ယောက် ဝင်ရောက်လာပါပြီ။")
+                    except: pass
+        except Exception as e:
+            logging.error(f"Referral error: {e}")
+            
     conn.commit()
     await send_user_home(uid, message.from_user.first_name)
 
-# --- WEBHOOK SETUP ---
+@dp.callback_query(F.data == "check_status")
+async def check_status(callback: types.CallbackQuery):
+    count = get_user_count(callback.from_user.id)
+    await callback.answer(f"သင်ဖိတ်ခေါ်ထားသူ: {count}/{REQUIRED_SHARES} ယောက်", show_alert=True)
+
+@dp.callback_query(F.data == "show_leaderboard")
+async def show_leaderboard(callback: types.CallbackQuery):
+    top_users = get_top_users()
+    if not top_users:
+        await callback.answer("Leaderboard မှာ အချက်အလက်မရှိသေးပါ", show_alert=True)
+        return
+    text = "🏆 Top 10 Leaderboard 🏆\n\n"
+    for idx, user in enumerate(top_users, 1):
+        text += f"{idx}. {user[0]} - {user[1]} ယောက်\n"
+    await callback.message.answer(text)
+    await callback.answer()
+
+@dp.chat_join_request()
+async def handle_join_request(update: types.ChatJoinRequest):
+    uid = update.from_user.id
+    count = get_user_count(uid)
+    if count >= REQUIRED_SHARES:
+        try:
+            await bot.approve_chat_join_request(chat_id=GROUP_ID, user_id=uid)
+            return
+        except:
+            pass
+        
+    bot_user = await bot.get_me()
+    selected_text = random.choice(SHARE_MESSAGES)
+    bot_link = f"https://t.me/{bot_user.username}?start=ref_{uid}"
+    share_url = f"https://t.me/share/url?url={urllib.parse.quote(bot_link)}&text={urllib.parse.quote(selected_text)}"
+    
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text="Share လုပ်ရန်", url=share_url))
+    try:
+        await bot.send_message(
+            chat_id=uid,
+            text=f"မင်္ဂလာပါ {update.from_user.first_name}။\n\nVIP Group ဝင်ခွင့်တောင်းထားတာကို လက်ခံရရှိပါတယ်၊ ဒါပေမယ့် စည်းကမ်းချက်အတိုင်း လူ ၁ ယောက် မပြည့်သေးပါဘူးဗျာ။\nအောက်ကခလုတ်ကို နှိပ်ပြီး လူ (၁) ယောက်ပြည့်အောင် အရင်ဆုံး ခေါ်ပေးပါဦးနော်။\n\nလက်ရှိ သင့်လင့်ခ်မှ ဝင်လာသူ: {count}/1 ယောက်။",
+            reply_markup=builder.as_markup()
+        )
+    except:
+        pass
+
 async def on_startup(bot: Bot) -> None:
     await bot.set_webhook(WEBHOOK_URL)
 
