@@ -64,40 +64,21 @@ async def send_user_home(uid, fname):
     selected_text = random.choice(SHARE_MESSAGES)
     bot_link = f"https://t.me/{bot_user.username}?start=ref_{uid}"
     
-    # Telegram share link မှာ ပုံအသေအချာပေါ်စေဖို့ စာသားရဲ့အရှေ့မှာ Invisible Link (Zero Width Space) ကို သုံးပြီး ရေကူးကန်ပုံ Direct Link ကို သေချာဝှက်ထည့်ပေးထားပါတယ်
-    hidden_image = f'<a href="https://i.ibb.co/BqpCrxH/ZR482YQD.jpg">&#8203;</a>'
-    
-    # Share လုပ်မယ့် message ထဲမှာ text ကို parse_mode HTML ဖြစ်အောင် Telegram က auto handling လုပ်ပေးဖို့ share link standard အတိုင်း စာသားပုံစံချပါတယ်
-    # Telegram share link formatting with embedded preview link:
-    share_text = f"{hidden_image}{selected_text}\n\n{bot_link}"
-    
-    # We use a trick where we put the image link in url parameter, and text in text parameter, or combine them to enforce preview.
-    # To absolutely guarantee image preview, the primary URL must be the image, and the bot link inside text, OR the primary URL is bot link but it needs text with link.
-    # Let's pass the bot link as primary url and text with embedded HTML style image link.
     share_url = f"https://t.me/share/url?url={urllib.parse.quote(bot_link)}&text={urllib.parse.quote(selected_text)}"
-    
-    # Alternate approach that ALWAYS forces the target picture: 
-    # Let's embed the image via standard Telegram text parsing in share
-    share_url = f"https://t.me/share/url?url={urllib.parse.quote(bot_link)}&text={urllib.parse.quote(selected_text + ' ')}%E2%80%8B"
 
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text="VIP Group ဝင်ခွင့်တောင်းရန်", url=GROUP_REQUEST_LINK))
-    builder.row(InlineKeyboardButton(text="အခြား Group များသို့ ရှဲရန်", url=f"https://t.me/share/url?url={urllib.parse.quote(bot_link)}&text={urllib.parse.quote(selected_text)}"))
+    builder.row(InlineKeyboardButton(text="အခြား Group များသို့ ရှဲရန်", url=share_url))
     builder.row(InlineKeyboardButton(text="သင့်ရဲ့ လက်ရှိအခြေအနေ (Status)", callback_data="check_status"))
     builder.row(InlineKeyboardButton(text="Top 10 Leaderboard", callback_data="show_leaderboard"))
     
+    # စာသား စာကြောင်းဆင်းမှုကို ပုံစံအမှန် ပြန်ပြင်ထားပါတယ်
     text_message = (
-        f"မင်္ဂလာပါ {fname},
-
-"
-        f"VIP Group ဝင်ရန် နည်းလမ်း
-"
-        f"၁။ အောက်က 'VIP Group ဝင်ခွင့်တောင်းရန်' ကို အရင်နှိပ်ထားပါ။
-"
-        f"၂။ 'အခြား Group များသို့ ရှဲရန်' ကို နှိပ်ပြီး သူငယ်ချင်း (၁) ယောက် ဖိတ်ခေါ်ပေးပါ။
-
-"
-        f"လက်ရှိအခြေအနေ: {count}/1 ယောက်။"
+        f"မင်္ဂလာပါ {fname},\n\n"
+        f"VIP Group ဝင်ရန် နည်းလမ်း\n"
+        f"၁။ အောက်က 'VIP Group ဝင်ခွင့်တောင်းရန်' ကို အရင်နှိပ်ထားပါ။\n"
+        f"၂။ 'အခြား Group များသို့ ရှဲရန်' ကို နှိပ်ပြီး သူငယ်ချင်း (၁) ယောက် ဖိတ်ခေါ်ပေးပါ။\n\n"
+        f"လက်ရှိအခြေအနေ: {count}/1 ယောက်।"
     )
     
     await bot.send_message(chat_id=uid, text=text_message, reply_markup=builder.as_markup())
@@ -105,11 +86,11 @@ async def send_user_home(uid, fname):
 @dp.message(Command("start"))
 async def start_command(message: types.Message):
     uid = message.from_user.id
-    args = message.text.split()
     
     cursor.execute("INSERT OR IGNORE INTO users (user_id, username, first_name) VALUES (?, ?, ?)", 
                    (uid, message.from_user.username or "", message.from_user.first_name or "User"))
     
+    args = message.text.split()
     if len(args) > 1 and args[1].startswith("ref_"):
         try:
             referrer_id = int(args[1].split("_")[1])
@@ -121,7 +102,7 @@ async def start_command(message: types.Message):
                     cursor.execute("UPDATE users SET count = count + 1 WHERE user_id=?", (referrer_id,))
                     conn.commit()
                     try:
-                        await bot.send_message(chat_id=referrer_id, text=f"🎉 သင့်လင့်ခ်မှ လူသစ်တစ်ယောက် ဝင်ရောက်လာပါပြီ။")
+                        await bot.send_message(chat_id=referrer_id, text="🎉 သင့်လင့်ခ်မှ လူသစ်တစ်ယောက် ဝင်ရောက်လာပါပြီ။")
                     except: pass
         except Exception as e:
             logging.error(f"Referral error: {e}")
@@ -174,6 +155,8 @@ async def handle_join_request(update: types.ChatJoinRequest):
         pass
 
 async def on_startup(bot: Bot) -> None:
+    # Webhook ကို သေချာပြန်ပွင့်သွားအောင် drop ပြီး ပြန်ဆောက်ပါတယ်
+    await bot.delete_webhook(drop_pending_updates=True)
     await bot.set_webhook(WEBHOOK_URL)
 
 def main():
