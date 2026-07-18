@@ -155,22 +155,27 @@ async def start_command(message: types.Message):
     count = get_user_count(uid)
 
     builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(text="🔓 ၁။ VIP Group ဝင်ခွင့်တောင်းရန်", url=GROUP_REQUEST_LINK))
-    builder.row(InlineKeyboardButton(text="📢 ၂။ အခြား Group များသို့ ရှဲရန်", url=share_url))
+    
+    # 🎯 ရှဲပြီးသားလူဆို ဝင်ခွင့်တောင်းတဲ့ခလုတ်ပြမယ်၊ မရှဲရသေးရင် ရှဲခလုတ်ပဲပြမယ်
+    if count >= REQUIRED_SHARES:
+        builder.row(InlineKeyboardButton(text="🔓 VIP Group ဝင်ခွင့်တောင်းရန်", url=GROUP_REQUEST_LINK))
+        instructions_text = (
+            f"👋 မင်္ဂလာပါ {fname} ဗျာ။\n\n"
+            f"🎉 ဂုဏ်ယူပါတယ်! သင်လူခေါ်တာ ပြည့်သွားပြီဖြစ်လို့ အောက်က ခလုတ်ကိုနှိပ်ပြီး VIP Group ထဲကို ဝင်ရောက်နိုင်ပါပြီဗျာ။"
+        )
+    else:
+        builder.row(InlineKeyboardButton(text="📢 အခြား Group များသို့ ရှဲရန်", url=share_url))
+        instructions_text = (
+            f"👋 မင်္ဂလာပါ {fname} ဗျာ။\n\n"
+            f"⚠️ *စည်းကမ်းချက်:*\n"
+            f"ဗီဒီယိုအပြည့်အစုံနှင့် VIP Group ထဲသို့ ဝင်ရောက်နိုင်ရန် အောက်ပါအတိုင်း လုပ်ဆောင်ပေးရပါမည် -\n\n"
+            f"📢 အောက်က 'အခြား Group များသို့ ရှဲရန်' ခလုတ်ကိုနှိပ်ပြီး **လူ (၁) ယောက်** အရင်ခေါ်ပေးပါ။\n\n"
+            f"📊 လက်ရှိ သင့်လင့်ခ်မှ ဝင်လာသူ: [{count}/{REQUIRED_SHARES}] ယောက်။"
+        )
+        
     builder.row(InlineKeyboardButton(text="🏆 Top 10 Leaderboard ကိုကြည့်ရန်", callback_data="show_leaderboard"))
     
     video_to_send = get_latest_video()
-    
-    instructions_text = (
-        f"👋 မင်္ဂလာပါ {fname} ဗျာ။\n\n"
-        f"⚠️ *စည်းကမ်းချက်:*\n"
-        f"ဗီဒီယိုအပြည့်အစုံနှင့် VIP Group ထဲသို့ ဝင်ရောက်နိုင်ရန် အောက်ပါအတိုင်း လုပ်ဆောင်ပေးရပါမည် -\n\n"
-        f"၁။ *၁။ VIP Group ဝင်ခွင့်တောင်းရန်* ခလုတ်ကိုနှိပ်ပြီး ဝင်ခွင့်တောင်းထားပါ။\n"
-        f"၂။ *၂။ အခြား Group များသို့ ရှဲရန်* ခလုတ်ကိုနှိပ်ပြီး **လူ (၁) ယောက်** သာ ခေါ်ပေးပါ။\n\n"
-        f"📊 လက်ရှိ သင့်လင့်ခ်မှ ဝင်လာသူ: [{count}/{REQUIRED_SHARES}] ယောက်။\n\n"
-        f"🏆 အောက်က Leaderboard ခလုတ်ကိုနှိပ်ပြီး လူအများဆုံးခေါ်ထားတဲ့သူတွေကိုလည်း ကြည့်နိုင်ပါတယ်ဗျာ။"
-    )
-
     if video_to_send:
         try:
             preview_msg = await bot.send_video(
@@ -185,7 +190,7 @@ async def start_command(message: types.Message):
             
     await message.answer(instructions_text, reply_markup=builder.as_markup(), parse_mode="Markdown")
 
-# 📊 --- ယူဆာနိမ်း ပုံစံဖြင့် ပြောင်းလဲပြင်ဆင်ထားသော LEADERBOARD ---
+# 📊 --- 🛠️ FIX ဖြစ်အောင် သေချာပြင်ဆင်ထားသော LEADERBOARD ---
 @dp.callback_query(F.data == "show_leaderboard")
 async def leaderboard_callback(callback: types.CallbackQuery):
     cursor.execute("SELECT user_id, username, first_name, count FROM users WHERE count > 0 ORDER BY count DESC LIMIT 10")
@@ -198,13 +203,15 @@ async def leaderboard_callback(callback: types.CallbackQuery):
         for i, user in enumerate(top_users, 1):
             user_id, username, first_name, count = user
             
-            # Username ရှိရင် @username ပုံစံပြမယ်၊ မရှိရင် First Name ကို Link ချိတ်ပြီးပြမယ်
-            if username and username != "No Username" and username != "":
+            # 🛠️ Markdown Error မတက်အောင် HTML style သို့မဟုတ် အက္ခရာများကို ရှင်းလင်းသည့်စနစ် သုံးထားပါတယ်
+            if username and username.strip():
                 user_display = f"@{username}"
             else:
-                # Markdown format နဲ့ နာမည်ကို Mention ခေါ်တဲ့ပုံစံပါ
-                clean_name = first_name.replace('[', '').replace(']', '').replace('(', '').replace(')', '')
-                user_display = f"[{clean_name}](tg://user?id={user_id})"
+                # နာမည်ထဲမှာ Markdown လင့်ခ် ပျက်စီးစေမယ့် သင်္ကေတတွေကို အကုန်ဖယ်ထုတ်ပါတယ်
+                safe_name = re.sub(r'[_*`\[\]()]', '', first_name) if first_name else "User"
+                if not safe_name.strip():
+                    safe_name = "User"
+                user_display = f"[{safe_name}](tg://user?id={user_id})"
                 
             text += f"{i}️⃣ {user_display} — {count} ယောက်\n"
             
@@ -212,7 +219,17 @@ async def leaderboard_callback(callback: types.CallbackQuery):
     
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text="🔙 နောက်သို့", callback_data="back_to_start"))
-    await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="Markdown")
+    
+    try:
+        await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="Markdown")
+    except Exception as e:
+        # တကယ်လို့ Markdown error ထပ်တက်ရင် စာသားသက်သက်နဲ့ပဲ အလုပ်လုပ်အောင် ဒုတိယအဆင့်အနေနဲ့ ကာကွယ်ထားပါတယ်
+        logging.error(f"Markdown error: {e}")
+        clean_text = text.replace("[", "").replace("]", "").replace("(", "").replace(")", "")
+        try:
+            await callback.message.edit_text(clean_text, reply_markup=builder.as_markup())
+        except Exception:
+            pass
     await callback.answer()
 
 @dp.callback_query(F.data == "back_to_start")
@@ -223,16 +240,21 @@ async def back_to_start_callback(callback: types.CallbackQuery):
     share_url = f"https://t.me/share/url?url=https://t.me/{bot_user.username}?start=ref_{uid}&text=ညစာ 1.0 VIP Group ဝင်ချင်ရင် ဒီလင့်ခ်ကနေ ဝင်ပါဦး။"
     
     builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(text="🔓 ၁။ VIP Group ဝင်ခွင့်တောင်းရန်", url=GROUP_REQUEST_LINK))
-    builder.row(InlineKeyboardButton(text="📢 ၂။ အခြား Group များသို့ ရှဲရန်", url=share_url))
+    if count >= REQUIRED_SHARES:
+        builder.row(InlineKeyboardButton(text="🔓 VIP Group ဝင်ခွင့်တောင်းရန်", url=GROUP_REQUEST_LINK))
+        text = f"👋 မင်္ဂလာပါ {callback.from_user.first_name} ဗျာ။\n\n🎉 လူခေါ်တာ ပြည့်သွားပြီဖြစ်လို့ အောက်က ခလုတ်ကိုနှိပ်ပြီး VIP Group ထဲကို ဝင်နိုင်ပါပြီ။"
+    else:
+        builder.row(InlineKeyboardButton(text="📢 အခြား Group များသို့ ရှဲရန်", url=share_url))
+        text = (
+            f"👋 မင်္ဂလာပါ {callback.from_user.first_name} ဗျာ။\n\n"
+            f"⚠️ *စည်းကမ်းချက်:*\n"
+            f"📢 အောက်က 'အခြား Group များသို့ ရှဲရန်' ခလုတ်ကိုနှိပ်ပြီး လူ (၁) ယောက် အရင်ခေါ်ပေးပါ။\n\n"
+            f"📊 လက်ရှိ သင့်လင့်ခ်မှ ဝင်လာသူ: [{count}/{REQUIRED_SHARES}] ယောက်।"
+        )
+        
     builder.row(InlineKeyboardButton(text="🏆 Top 10 Leaderboard ကိုကြည့်ရန်", callback_data="show_leaderboard"))
     
-    await callback.message.edit_text(
-        f"👋 မင်္ဂလာပါ {callback.from_user.first_name} ဗျာ။\n\n"
-        f"📊 လက်ရှိ သင့်လင့်ခ်မှ ဝင်လာသူ: [{count}/{REQUIRED_SHARES}] ယောက်။",
-        reply_markup=builder.as_markup(),
-        parse_mode="Markdown"
-    )
+    await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="Markdown")
     await callback.answer()
 
 @dp.chat_join_request()
