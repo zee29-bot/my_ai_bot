@@ -28,7 +28,7 @@ WEB_SERVER_PORT = int(os.getenv("PORT", 8080))
 SHARE_MESSAGES = [
     "VIP Group ကို အခမဲ့ ဝင်လို့ရနေပြီနော်။ အမြန်ဆုံး ဝင်ထားလိုက်တော့",
     "VIP အလန်းစားတွေ နေ့တိုင်းတင်ပေးနေတဲ့ Bot ဖြစ်ပါတယ်။ အောက်ကလင့်ခ်မှာ ဝင်ပါ",
-    "ဝင်ကြေးပေးစရာမလိုဘဲ VIP Group ဝင်ချင်သူများ အခုပဲ ဒီ Bot လေးကို နှိပ်ဝင်လိုက်ပါ",
+    "ဝင်ကြေးပေးစရာမလိုဘဲ VIP Group ဝင်ချင်သူများ အခုပဲ Di Bot လေးကို နှိပ်ဝင်လိုက်ပါ",
     "VIP Group ဝင်ခွင့်ကို Free ပေးနေပြီမို့ နောက်မကျခင် အခုပဲ လင့်ခ်ကို နှိပ်ဝင်ထားပါ"
 ]
 
@@ -71,14 +71,8 @@ async def send_user_home(uid, fname):
     selected_text = random.choice(SHARE_MESSAGES)
     bot_link = f"https://t.me/{bot_user.username}?start=ref_{uid}"
     
-    # Telegram Share စနစ်အတွက် စာသားသန့်သန့်ကို အောက်ကပုံစံအတိုင်း ပေါင်းစပ်ပြီး တွဲပေးလိုက်ပါတယ်
-    share_image = get_setting("share_image_url")
-    if share_image:
-        share_content = f"{selected_text}\n\n{bot_link}\n{share_image}"
-    else:
-        share_content = f"{selected_text}\n\n{bot_link}"
-        
-    share_url = f"https://t.me/share/url?url={urllib.parse.quote(share_content)}"
+    # 🌟 ပုံလင့်ခ်တွေ အကုန်ဖြုတ်လိုက်ပါပြီ။ စာသားနဲ့ လင့်ခ်ပဲ သန့်သန့်လေး ရှဲသွားမှာပါ
+    share_url = f"https://t.me/share/url?url={urllib.parse.quote(bot_link)}&text={urllib.parse.quote(selected_text)}"
 
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text="VIP Group ဝင်ခွင့်တောင်းရန်", url=GROUP_REQUEST_LINK))
@@ -94,7 +88,7 @@ async def send_user_home(uid, fname):
         f"လက်ရှိအခြေအနေ: {count}/1 ယောက်।"
     )
     
-    # 🎬 ၂၀ စက္ကန့်ပြ ဗီဒီယိုစနစ်
+    # 🎬 ၂၀ စက္ကန့်ပြ ဗီဒီယိုစနစ် (ဗီဒီယိုရှိရင် ပြပြီး ပြန်ဖျက်ပေးမယ့်အပိုင်း)
     video_to_send = get_setting("latest_video")
     if video_to_send:
         try:
@@ -110,7 +104,7 @@ async def send_admin_home(uid):
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text="📊 ကိန်းဂဏန်းများကြည့်ရန်", callback_data="admin_stats"))
     builder.row(InlineKeyboardButton(text="📢 အားလုံးဆီ စာပို့ရန် (Broadcast)", callback_data="admin_broadcast"))
-    await bot.send_message(chat_id=uid, text="👑 Admin Control Panel 👑\n\nလုပ်ဆောင်လိုသည့် လုပ်ငန်းစဉ်ကို ရွေးချယ်ပါ။\n\n💡 <b>သိကောင်းစရာ:</b>\n- ဗီဒီယိုပို့လိုက်ရင် ၂၀ စက္ကန့်ပြစနစ်ထဲ သိမ်းသွားပါမယ်။\n- ပုံ (Photo) တစ်ပုံ ပို့လိုက်ရင် Share တဲ့နေရာမှာ သုံးမယ့် ပုံအဖြစ် အလိုအလျောက် ပြောင်းလဲသိမ်းဆည်းပေးပါမယ်။", parse_mode="HTML", reply_markup=builder.as_markup())
+    await bot.send_message(chat_id=uid, text="👑 Admin Control Panel 👑\n\nလုပ်ဆောင်လိုသည့် လုပ်ငန်းစဉ်ကို ရွေးချယ်ပါ။\n\n💡 <b>သိကောင်းစရာ:</b>\n- ဗီဒီယိုပို့လိုက်ရင် ၂၀ စက္ကန့်ပြစနစ်ထဲ သိမ်းသွားပါမယ်။", reply_markup=builder.as_markup())
 
 @dp.message(Command("start"))
 async def start_command(message: types.Message):
@@ -143,20 +137,11 @@ async def start_command(message: types.Message):
     conn.commit()
     await send_user_home(uid, message.from_user.first_name)
 
-# --- ADMIN VIDEO & PHOTO AUTO SAVE ---
+# --- ADMIN VIDEO AUTO SAVE ---
 @dp.message(F.chat.type == "private", F.from_user.id == ADMIN_ID, F.video)
 async def save_admin_preview_video(message: types.Message):
     set_setting("latest_video", message.video.file_id)
     await message.reply("✅ Preview ဗီဒီယိုအသစ်ကို သိမ်းဆည်းလိုက်ပါပြီ။ User အသစ်တွေ /start နှိပ်ရင် ၂၀ စက္ကန့် ပေါ်ပါလိမ့်မယ်။")
-
-@dp.message(F.chat.type == "private", F.from_user.id == ADMIN_ID, F.photo)
-async def save_admin_share_photo(message: types.Message):
-    photo_file_id = message.photo[-1].file_id
-    file_info = await bot.get_file(photo_file_id)
-    direct_url = f"https://api.telegram.org/file/bot{BOT_TOKEN}/{file_info.file_path}"
-    
-    set_setting("share_image_url", direct_url)
-    await message.reply("📸 ရှဲရာတွင်သုံးမည့် ပုံအသစ်ကို အောင်မြင်စွာ ပြောင်းလဲသိမ်းဆည်းလိုက်ပါပြီဗျာ!")
 
 @dp.message(F.chat.type == "private", F.from_user.id == ADMIN_ID, F.reply_to_message)
 async def do_broadcast(message: types.Message):
@@ -251,13 +236,7 @@ async def handle_join_request(update: types.ChatJoinRequest):
     selected_text = random.choice(SHARE_MESSAGES)
     bot_link = f"https://t.me/{bot_user.username}?start=ref_{uid}"
     
-    share_image = get_setting("share_image_url")
-    if share_image:
-        share_content = f"{selected_text}\n\n{bot_link}\n{share_image}"
-    else:
-        share_content = f"{selected_text}\n\n{bot_link}"
-        
-    share_url = f"https://t.me/share/url?url={urllib.parse.quote(share_content)}"
+    share_url = f"https://t.me/share/url?url={urllib.parse.quote(bot_link)}&text={urllib.parse.quote(selected_text)}"
     
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text="Share လုပ်ရန်", url=share_url))
