@@ -26,7 +26,6 @@ WEBHOOK_URL = f"{WEBHOOK_HOST}{WEBHOOK_PATH}"
 WEB_SERVER_HOST = "0.0.0.0"
 WEB_SERVER_PORT = int(os.getenv("PORT", 8080))
 
-# 🛡️ Anti-Ban စနစ်အတွက် ရှင်းလင်းသော စာသားပုံစံ ၄ မျိုး
 SHARE_MESSAGES = [
     "VIP Group ကို အခမဲ့ ဝင်လို့ရနေပြီနော်။ အမြန်ဆုံး ဝင်ထားလိုက်တော့",
     "VIP အလန်းစားတွေ နေ့တိုင်းတင်ပေးနေတဲ့ Bot ဖြစ်ပါတယ်။ အောက်ကလင့်ခ်မှာ ဝင်ပါ",
@@ -206,8 +205,10 @@ async def send_user_home(uid, fname):
     
     selected_text = random.choice(SHARE_MESSAGES)
     
-    # လင့်ခ်အသန့်စနစ် (imgbb လင့်ခ်က တခြား gp ထဲမှာ ပုံကြီးအဖြစ် auto preview ပေါ်စေပါတယ်)
-    share_content = f"{IMAGE_URL}\n\n{selected_text}\nhttps://t.me/{bot_user.username}?start=ref_{uid}"
+    # မျက်စိဖြင့်မမြင်ရသော Character ကိုသုံး၍ Link စာသားကို ဖျောက်ထားပေးပါမည်
+    hidden_link = "\u200b" + IMAGE_URL
+    
+    share_content = f"{selected_text}\n\n{hidden_link}\n\nhttps://t.me/{bot_user.username}?start=ref_{uid}"
     share_url = f"https://t.me/share/url?url={share_content}"
 
     builder = InlineKeyboardBuilder()
@@ -275,7 +276,8 @@ async def handle_join_request(update: types.ChatJoinRequest):
         
     bot_user = await bot.get_me()
     selected_text = random.choice(SHARE_MESSAGES)
-    share_content = f"{IMAGE_URL}\n\n{selected_text}\nhttps://t.me/{bot_user.username}?start=ref_{uid}"
+    hidden_link = "\u200b" + IMAGE_URL
+    share_content = f"{selected_text}\n\n{hidden_link}\n\nhttps://t.me/{bot_user.username}?start=ref_{uid}"
     share_url = f"https://t.me/share/url?url={share_content}"
     
     builder = InlineKeyboardBuilder()
