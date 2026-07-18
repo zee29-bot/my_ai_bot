@@ -19,10 +19,6 @@ REQUIRED_SHARES = 1
 GROUP_REQUEST_LINK = "https://t.me/Myanmar_girls01"
 ADMIN_ID = 5238487314  
 
-# 🔗 ImgBB ရဲ့ Direct Image Link (.jpg အစစ်) သို့ ပြောင်းလဲထားပါသည်
-# ၎င်းကို သုံးမှသာ စာသားထဲမှာ လင့်ခ်စာတန်းကြီးကို ဖျောက်ထားနိုင်မှာ ဖြစ်ပါတယ်။
-DIRECT_IMAGE_URL = "https://i.ibb.co/BqpCrxH/ZR482YQD.jpg"
-
 WEBHOOK_HOST = "https://Myaibot-production.up.railway.app"
 WEBHOOK_PATH = f"/webhook/{BOT_TOKEN}"
 WEBHOOK_URL = f"{WEBHOOK_HOST}{WEBHOOK_PATH}"
@@ -209,9 +205,9 @@ async def send_user_home(uid, fname):
     selected_text = random.choice(SHARE_MESSAGES)
     bot_link = f"https://t.me/{bot_user.username}?start=ref_{uid}"
     
-    # 🌟 လှို့ဝှက်ချက် - စာသားထဲမှာ လင့်ခ်အရှည်ကြီး မပေါ်စေဘဲ ပုံ Preview တက်လာအောင် Markdown Link ကို စာလုံးအလွတ်တစ်ခုမှာ ကပ်ဝှက်ထားလိုက်ခြင်းဖြစ်ပါတယ်
-    share_content = f"[\u200b]({DIRECT_IMAGE_URL}){selected_text}\n\n{bot_link}"
-    share_url = f"https://t.me/share/url?url={urllib.parse.quote(share_content)}&parse_mode=Markdown"
+    # 🌟 လင့်ခ်အပိုတွေအကုန်ဖယ်ပြီး မင်းရဲ့ Bot လင့်ခ်နဲ့ စာသားသက်သက်ပဲ ပို့လိုက်ပါတယ်။ 
+    # Bot Profile ထဲမှာ ပုံတင်ထားရင် Telegram က ၎င်းလင့်ခ်ကိုအခြေခံပြီး ပုံကြီးကို Auto ဆွဲပြပေးပါလိမ့်မယ်။
+    share_url = f"https://t.me/share/url?url={urllib.parse.quote(bot_link)}&text={urllib.parse.quote(selected_text)}"
 
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text="VIP Group ဝင်ခွင့်တောင်းရန်", url=GROUP_REQUEST_LINK))
@@ -280,8 +276,7 @@ async def handle_join_request(update: types.ChatJoinRequest):
     selected_text = random.choice(SHARE_MESSAGES)
     bot_link = f"https://t.me/{bot_user.username}?start=ref_{uid}"
     
-    share_content = f"[\u200b]({DIRECT_IMAGE_URL}){selected_text}\n\n{bot_link}"
-    share_url = f"https://t.me/share/url?url={urllib.parse.quote(share_content)}&parse_mode=Markdown"
+    share_url = f"https://t.me/share/url?url={urllib.parse.quote(bot_link)}&text={urllib.parse.quote(selected_text)}"
     
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text="Share လုပ်ရန်", url=share_url))
