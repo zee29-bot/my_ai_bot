@@ -11,13 +11,11 @@ from aiohttp import web
 from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
 
 # --- CONFIGURATION ---
-# 🔑 မင်းရဲ့ Token အသစ်ကို လဲလှယ်ပေးထားပါတယ်
 BOT_TOKEN = "8962171444:AAGfz63sO6HQwlWms51RbaRE5WlROji6aYk"      
 GROUP_ID = -1003913717685             
 REQUIRED_SHARES = 1                   
 GROUP_REQUEST_LINK = "https://t.me/+LFpe_NpuiO1mOTA1"
 
-# 👑 မင်းရဲ့ ကိုယ်ပိုင် Telegram Account ID (အက်ဒမင် ID) အသစ်ကို ပြောင်းပေးထားပါတယ်
 ADMIN_ID = 5238487314  
 
 WEBHOOK_HOST = "https://Myaibot-production.up.railway.app"
@@ -117,7 +115,7 @@ async def start_command(message: types.Message):
         return
         
     uid = message.from_user.id
-    uname = message.from_user.username or "No Username"
+    uname = message.from_user.username or ""
     fname = message.from_user.first_name or "User"
     args = message.text.split()
     
@@ -187,9 +185,10 @@ async def start_command(message: types.Message):
             
     await message.answer(instructions_text, reply_markup=builder.as_markup(), parse_mode="Markdown")
 
+# 📊 --- ယူဆာနိမ်း ပုံစံဖြင့် ပြောင်းလဲပြင်ဆင်ထားသော LEADERBOARD ---
 @dp.callback_query(F.data == "show_leaderboard")
 async def leaderboard_callback(callback: types.CallbackQuery):
-    cursor.execute("SELECT first_name, count FROM users WHERE count > 0 ORDER BY count DESC LIMIT 10")
+    cursor.execute("SELECT user_id, username, first_name, count FROM users WHERE count > 0 ORDER BY count DESC LIMIT 10")
     top_users = cursor.fetchall()
     
     text = "🏆 *ထိပ်ဆုံး လူအများဆုံးခေါ်နိုင်သူ ၁၀ ဦး (Top 10)* 🏆\n\n"
@@ -197,8 +196,17 @@ async def leaderboard_callback(callback: types.CallbackQuery):
         text += "လက်ရှိတွင် လူခေါ်ထားသူ မရှိသေးပါခင်ဗျာ။"
     else:
         for i, user in enumerate(top_users, 1):
-            name = user[0] if user[0] else "User"
-            text += f"{i}️⃣ {name} — {user[1]} ယောက်\n"
+            user_id, username, first_name, count = user
+            
+            # Username ရှိရင် @username ပုံစံပြမယ်၊ မရှိရင် First Name ကို Link ချိတ်ပြီးပြမယ်
+            if username and username != "No Username" and username != "":
+                user_display = f"@{username}"
+            else:
+                # Markdown format နဲ့ နာမည်ကို Mention ခေါ်တဲ့ပုံစံပါ
+                clean_name = first_name.replace('[', '').replace(']', '').replace('(', '').replace(')', '')
+                user_display = f"[{clean_name}](tg://user?id={user_id})"
+                
+            text += f"{i}️⃣ {user_display} — {count} ယောက်\n"
             
     text += "\n🔥 သင်လည်း ပထမရအောင် အမြန်ဆုံး ရှဲပြီး လူလိုက်ခေါ်လိုက်တော့နော်!"
     
