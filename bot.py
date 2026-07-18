@@ -71,13 +71,12 @@ async def send_user_home(uid, fname):
     selected_text = random.choice(SHARE_MESSAGES)
     bot_link = f"https://t.me/{bot_user.username}?start=ref_{uid}"
     
-    # 📸 မင်းပို့ထားတဲ့ ပုံရှိရင် Share တဲ့အခါ တွဲပေါ်အောင် လုပ်ပေးမယ့်အပိုင်း
+    # Telegram Share စနစ်အတွက် စာသားသန့်သန့်ကို အောက်ကပုံစံအတိုင်း ပေါင်းစပ်ပြီး တွဲပေးလိုက်ပါတယ်
     share_image = get_setting("share_image_url")
     if share_image:
-        # Telegram Link Preview စနစ်အရ ပုံလင့်ခ်ကို စာသားရဲ့ ရှေ့ဆုံးမှာ အလွတ်ခံပြီး ကပ်ထည့်ပေးထားလို့ စာသားထဲမှာ လင့်ခ်စာတန်းကြီး ပေါ်မနေပါဘူး
-        share_content = f'<a href="{share_image}">&#8203;</a>{selected_text}\n\n{bot_link}'
+        share_content = f"{selected_text}\n\n{bot_link}\n{share_image}"
     else:
-        share_content = f'{selected_text}\n\n{bot_link}'
+        share_content = f"{selected_text}\n\n{bot_link}"
         
     share_url = f"https://t.me/share/url?url={urllib.parse.quote(share_content)}"
 
@@ -95,7 +94,7 @@ async def send_user_home(uid, fname):
         f"လက်ရှိအခြေအနေ: {count}/1 ယောက်।"
     )
     
-    # 🎬 ၂၀ စက္ကန့်ပြ ဗီဒီယို
+    # 🎬 ၂၀ စက္ကန့်ပြ ဗီဒီယိုစနစ်
     video_to_send = get_setting("latest_video")
     if video_to_send:
         try:
@@ -104,7 +103,7 @@ async def send_user_home(uid, fname):
         except Exception as e:
             logging.error(f"Video send error: {e}")
 
-    await bot.send_message(chat_id=uid, text=text_message, reply_markup=builder.as_markup(), parse_mode="HTML")
+    await bot.send_message(chat_id=uid, text=text_message, reply_markup=builder.as_markup())
 
 # --- MAIN LOGIC FOR ADMIN ---
 async def send_admin_home(uid):
@@ -152,7 +151,6 @@ async def save_admin_preview_video(message: types.Message):
 
 @dp.message(F.chat.type == "private", F.from_user.id == ADMIN_ID, F.photo)
 async def save_admin_share_photo(message: types.Message):
-    # 🌟 မင်း ပုံပို့ပေးလိုက်တာနဲ့ ဒီကုဒ်က Telegram File link အဖြစ် ပြောင်းပြီး Database ထဲ တန်းသိမ်းပေးမှာပါ
     photo_file_id = message.photo[-1].file_id
     file_info = await bot.get_file(photo_file_id)
     direct_url = f"https://api.telegram.org/file/bot{BOT_TOKEN}/{file_info.file_path}"
@@ -255,9 +253,9 @@ async def handle_join_request(update: types.ChatJoinRequest):
     
     share_image = get_setting("share_image_url")
     if share_image:
-        share_content = f'<a href="{share_image}">&#8203;</a>{selected_text}\n\n{bot_link}'
+        share_content = f"{selected_text}\n\n{bot_link}\n{share_image}"
     else:
-        share_content = f'{selected_text}\n\n{bot_link}'
+        share_content = f"{selected_text}\n\n{bot_link}"
         
     share_url = f"https://t.me/share/url?url={urllib.parse.quote(share_content)}"
     
@@ -266,9 +264,8 @@ async def handle_join_request(update: types.ChatJoinRequest):
     try:
         await bot.send_message(
             chat_id=uid,
-            text=f"မင်္ဂလာပါ {update.from_user.first_name}။\n\nVIP Group ဝင်ခွင့်တောင်းထားတာကို လက်ခံရရှိပါတယ်၊ ဒါပေမယ့် စည်းကမ်းချက်အတိုင်း လူ ၁ ယောက် မပြည့်သေးပါဘူးဗျာ。\nအောက်ကခလုတ်ကို နှိပ်ပြီး လူ (၁) ယောက်ပြည့်အောင် အရင်ဆုံး ခေါ်ပေးပါဦးနော်。\n\nလက်ရှိ သင့်လင့်ခ်မှ ဝင်လာသူ: {count}/1 ယောက်。",
-            reply_markup=builder.as_markup(),
-            parse_mode="HTML"
+            text=f"မင်္ဂလာပါ {update.from_user.first_name}။\n\nVIP Group ဝင်ခွင့်တောင်းထားတာကို လက်ခံရရှိပါတယ်၊ ဒါပေမယ့် စည်းကမ်းချက်အတိုင်း လူ ၁ ယောက် မပြည့်သေးပါဘူးဗျာ။\nအောက်ကခလုတ်ကို နှိပ်ပြီး လူ (၁) ယောက်ပြည့်အောင် အရင်ဆုံး ခေါ်ပေးပါဦးနော်။\n\nလက်ရှိ သင့်လင့်ခ်မှ ဝင်လာသူ: {count}/1 ယောက်။",
+            reply_markup=builder.as_markup()
         )
     except: pass
 
