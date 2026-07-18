@@ -74,7 +74,7 @@ async def delete_preview_video(chat_id: int, message_id: int, delay: int = 20):
 @dp.message(F.chat.type == "private", F.from_user.id == ADMIN_ID, F.video)
 async def save_admin_preview_video(message: types.Message):
     set_latest_video(message.video.file_id)
-    await message.reply("🎉 အောင်မြင်ပါပြီသခင်! သင်ပို့လိုက်တဲ့ ဗီဒီယိုကို လူသစ်တွေအတွက် Preview အဖြစ် သိမ်းဆည်းလိုက်ပါပြီ။")
+    await message.reply("🎉 အောင်မြင်ပါပြီသခင်! ဗီဒီယိုကို သိမ်းဆည်းလိုက်ပါပြီ။")
 
 # --- GROUP MESSAGES & AUTO-DELETE ---
 @dp.message(F.chat.id == GROUP_ID)
@@ -136,9 +136,9 @@ async def start_command(message: types.Message):
                     try:
                         if current_points >= REQUIRED_SHARES:
                             await bot.approve_chat_join_request(chat_id=GROUP_ID, user_id=referrer_id)
-                            await bot.send_message(referrer_id, "🎉 အောင်မြင်ပါပြီ! လူ ၁ ယောက် တကယ်ဝင်လာခဲ့လို့ သင့်ကို Group ထဲ auto သွတ်သွင်းပေးလိုက်ပါပြီ။")
+                            await bot.send_message(referrer_id, "🎉 အောင်မြင်ပါပြီ! လူ ၁ ယောက် ဝင်လာခဲ့လို့ Group ထဲ auto သွတ်သွင်းပေးလိုက်ပါပြီ။")
                         else:
-                            await bot.send_message(referrer_id, f"➕ လူသစ်တစ်ယောက် တိုးလာပါပြီ။ လက်ရှိအခြေအနေ: [{current_points}/{REQUIRED_SHARES}] ယောက် ရှိပါပြီ။")
+                            await bot.send_message(referrer_id, f"➕ လူသစ်တစ်ယောက် တိုးလာပါပြီ။ လက်ရှိ: {current_points}/{REQUIRED_SHARES} ယောက်။")
                     except Exception:
                         pass
             except ValueError:
@@ -151,37 +151,32 @@ async def start_command(message: types.Message):
         conn.commit()
 
     bot_user = await bot.get_me()
-    share_url = f"https://t.me/share/url?url=https://t.me/{bot_user.username}?start=ref_{uid}&text=ညစာ 1.0 VIP Group ဝင်ချင်ရင် ဒီလင့်ခ်ကနေ ဝင်ပါဦး။"
+    share_url = f"https://t.me/share/url?url=https://t.me/{bot_user.username}?start=ref_{uid}&text=ဒီ Bot ထဲကနေ VIP Group ကို ဝင်ဖို့ ဒီလင့်ခ်ကနေ အရင် ဝင်ပေးပါဦး။"
     count = get_user_count(uid)
 
     builder = InlineKeyboardBuilder()
-    
-    # 🎯 ရှဲပြီးသားလူဆို ဝင်ခွင့်တောင်းတဲ့ခလုတ်ပြမယ်၊ မရှဲရသေးရင် ရှဲခလုတ်ပဲပြမယ်
-    if count >= REQUIRED_SHARES:
-        builder.row(InlineKeyboardButton(text="🔓 VIP Group ဝင်ခွင့်တောင်းရန်", url=GROUP_REQUEST_LINK))
-        instructions_text = (
-            f"👋 မင်္ဂလာပါ {fname} ဗျာ။\n\n"
-            f"🎉 ဂုဏ်ယူပါတယ်! သင်လူခေါ်တာ ပြည့်သွားပြီဖြစ်လို့ အောက်က ခလုတ်ကိုနှိပ်ပြီး VIP Group ထဲကို ဝင်ရောက်နိုင်ပါပြီဗျာ။"
-        )
-    else:
-        builder.row(InlineKeyboardButton(text="📢 အခြား Group များသို့ ရှဲရန်", url=share_url))
-        instructions_text = (
-            f"👋 မင်္ဂလာပါ {fname} ဗျာ။\n\n"
-            f"⚠️ *စည်းကမ်းချက်:*\n"
-            f"ဗီဒီယိုအပြည့်အစုံနှင့် VIP Group ထဲသို့ ဝင်ရောက်နိုင်ရန် အောက်ပါအတိုင်း လုပ်ဆောင်ပေးရပါမည် -\n\n"
-            f"📢 အောက်က 'အခြား Group များသို့ ရှဲရန်' ခလုတ်ကိုနှိပ်ပြီး **လူ (၁) ယောက်** အရင်ခေါ်ပေးပါ။\n\n"
-            f"📊 လက်ရှိ သင့်လင့်ခ်မှ ဝင်လာသူ: [{count}/{REQUIRED_SHARES}] ယောက်။"
-        )
-        
+    builder.row(InlineKeyboardButton(text="🔓 VIP Group ဝင်ခွင့်တောင်းရန်", url=GROUP_REQUEST_LINK))
+    builder.row(InlineKeyboardButton(text="📢 အခြား Group များသို့ ရှဲရန်", url=share_url))
     builder.row(InlineKeyboardButton(text="🏆 Top 10 Leaderboard ကိုကြည့်ရန်", callback_data="show_leaderboard"))
     
+    # --- စာသားများကို သပ်ရပ်အောင် ပြင်ထားသည် ---
+    instructions_text = (
+        f"👋 မင်္ဂလာပါ *{fname}*,\n\n"
+        f"✅ *VIP Group ဝင်ရန် နည်းလမ်း*\n"
+        f"၁။ 'VIP Group ဝင်ခွင့်တောင်းရန်' ခလုတ်ကို နှိပ်ထားပါ။\n"
+        f"၂။ 'အခြား Group များသို့ ရှဲရန်' ခလုတ်ကို နှိပ်ပြီး သူငယ်ချင်း (၁) ယောက်ကို ဖိတ်ခေါ်ပေးပါ။\n\n"
+        f"📊 *လက်ရှိအခြေအနေ*\n"
+        f"သင် ဖိတ်ခေါ်ထားသူ - *{count}/1* ယောက်။\n\n"
+        f"🏆 ထိပ်ဆုံး လူခေါ်နိုင်သူများစာရင်းကို ကြည့်ရန် အောက်ပါခလုတ်ကို နှိပ်ပါ။"
+    )
+
     video_to_send = get_latest_video()
     if video_to_send:
         try:
             preview_msg = await bot.send_video(
                 chat_id=uid,
                 video=video_to_send,
-                caption="⏳ *Preview Video:* ဒီဗီဒီယိုက စက္ကန့် ၂၀ နေရင် အလိုအလျောက် ပြန်ပျက်သွားပါလိမ့်မယ်။",
+                caption="⏳ *Preview Video (၂၀ စက္ကန့်သာပြမည်)*",
                 parse_mode="Markdown"
             )
             asyncio.create_task(delete_preview_video(chat_id=uid, message_id=preview_msg.message_id, delay=20))
@@ -190,42 +185,36 @@ async def start_command(message: types.Message):
             
     await message.answer(instructions_text, reply_markup=builder.as_markup(), parse_mode="Markdown")
 
-# 📊 --- 🛠️ FIX ဖြစ်အောင် သေချာပြင်ဆင်ထားသော LEADERBOARD ---
+# 📊 --- 🛠️ LEADERBOARD အပိုင်း ---
 @dp.callback_query(F.data == "show_leaderboard")
 async def leaderboard_callback(callback: types.CallbackQuery):
     cursor.execute("SELECT user_id, username, first_name, count FROM users WHERE count > 0 ORDER BY count DESC LIMIT 10")
     top_users = cursor.fetchall()
     
-    text = "🏆 *ထိပ်ဆုံး လူအများဆုံးခေါ်နိုင်သူ ၁၀ ဦး (Top 10)* 🏆\n\n"
+    text = "🏆 *Top 10 - လူခေါ်နိုင်သူများ*\n\n"
     if not top_users:
-        text += "လက်ရှိတွင် လူခေါ်ထားသူ မရှိသေးပါခင်ဗျာ။"
+        text += "လက်ရှိတွင် လူခေါ်ထားသူ မရှိသေးပါ။"
     else:
         for i, user in enumerate(top_users, 1):
             user_id, username, first_name, count = user
             
-            # 🛠️ Markdown Error မတက်အောင် HTML style သို့မဟုတ် အက္ခရာများကို ရှင်းလင်းသည့်စနစ် သုံးထားပါတယ်
             if username and username.strip():
                 user_display = f"@{username}"
             else:
-                # နာမည်ထဲမှာ Markdown လင့်ခ် ပျက်စီးစေမယ့် သင်္ကေတတွေကို အကုန်ဖယ်ထုတ်ပါတယ်
                 safe_name = re.sub(r'[_*`\[\]()]', '', first_name) if first_name else "User"
-                if not safe_name.strip():
-                    safe_name = "User"
                 user_display = f"[{safe_name}](tg://user?id={user_id})"
                 
-            text += f"{i}️⃣ {user_display} — {count} ယောက်\n"
+            text += f"{i}️⃣ {user_display} — *{count}* ယောက်\n"
             
-    text += "\n🔥 သင်လည်း ပထမရအောင် အမြန်ဆုံး ရှဲပြီး လူလိုက်ခေါ်လိုက်တော့နော်!"
+    text += "\n🚀 သင်လည်း အဆင့် (၁) ရအောင် အခုပဲ သူငယ်ချင်းတွေကို ထပ်ဖိတ်ခေါ်လိုက်ပါ!"
     
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text="🔙 နောက်သို့", callback_data="back_to_start"))
     
     try:
         await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="Markdown")
-    except Exception as e:
-        # တကယ်လို့ Markdown error ထပ်တက်ရင် စာသားသက်သက်နဲ့ပဲ အလုပ်လုပ်အောင် ဒုတိယအဆင့်အနေနဲ့ ကာကွယ်ထားပါတယ်
-        logging.error(f"Markdown error: {e}")
-        clean_text = text.replace("[", "").replace("]", "").replace("(", "").replace(")", "")
+    except Exception:
+        clean_text = text.replace("*", "").replace("[", "").replace("]", "").replace("(", "").replace(")", "")
         try:
             await callback.message.edit_text(clean_text, reply_markup=builder.as_markup())
         except Exception:
@@ -235,26 +224,26 @@ async def leaderboard_callback(callback: types.CallbackQuery):
 @dp.callback_query(F.data == "back_to_start")
 async def back_to_start_callback(callback: types.CallbackQuery):
     uid = callback.from_user.id
+    fname = callback.from_user.first_name
     count = get_user_count(uid)
     bot_user = await bot.get_me()
-    share_url = f"https://t.me/share/url?url=https://t.me/{bot_user.username}?start=ref_{uid}&text=ညစာ 1.0 VIP Group ဝင်ချင်ရင် ဒီလင့်ခ်ကနေ ဝင်ပါဦး။"
+    share_url = f"https://t.me/share/url?url=https://t.me/{bot_user.username}?start=ref_{uid}&text=ဒီ Bot ထဲကနေ VIP Group ကို ဝင်ဖို့ ဒီလင့်ခ်ကနေ အရင် ဝင်ပေးပါဦး။"
     
     builder = InlineKeyboardBuilder()
-    if count >= REQUIRED_SHARES:
-        builder.row(InlineKeyboardButton(text="🔓 VIP Group ဝင်ခွင့်တောင်းရန်", url=GROUP_REQUEST_LINK))
-        text = f"👋 မင်္ဂလာပါ {callback.from_user.first_name} ဗျာ။\n\n🎉 လူခေါ်တာ ပြည့်သွားပြီဖြစ်လို့ အောက်က ခလုတ်ကိုနှိပ်ပြီး VIP Group ထဲကို ဝင်နိုင်ပါပြီ။"
-    else:
-        builder.row(InlineKeyboardButton(text="📢 အခြား Group များသို့ ရှဲရန်", url=share_url))
-        text = (
-            f"👋 မင်္ဂလာပါ {callback.from_user.first_name} ဗျာ။\n\n"
-            f"⚠️ *စည်းကမ်းချက်:*\n"
-            f"📢 အောက်က 'အခြား Group များသို့ ရှဲရန်' ခလုတ်ကိုနှိပ်ပြီး လူ (၁) ယောက် အရင်ခေါ်ပေးပါ။\n\n"
-            f"📊 လက်ရှိ သင့်လင့်ခ်မှ ဝင်လာသူ: [{count}/{REQUIRED_SHARES}] ယောက်।"
-        )
-        
+    builder.row(InlineKeyboardButton(text="🔓 VIP Group ဝင်ခွင့်တောင်းရန်", url=GROUP_REQUEST_LINK))
+    builder.row(InlineKeyboardButton(text="📢 အခြား Group များသို့ ရှဲရန်", url=share_url))
     builder.row(InlineKeyboardButton(text="🏆 Top 10 Leaderboard ကိုကြည့်ရန်", callback_data="show_leaderboard"))
     
-    await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="Markdown")
+    instructions_text = (
+        f"👋 မင်္ဂလာပါ *{fname}*,\n\n"
+        f"✅ *VIP Group ဝင်ရန် နည်းလမ်း*\n"
+        f"၁။ 'VIP Group ဝင်ခွင့်တောင်းရန်' ခလုတ်ကို နှိပ်ထားပါ။\n"
+        f"၂။ 'အခြား Group များသို့ ရှဲရန်' ခလုတ်ကို နှိပ်ပြီး သူငယ်ချင်း (၁) ယောက်ကို ဖိတ်ခေါ်ပေးပါ။\n\n"
+        f"📊 *လက်ရှိအခြေအနေ*\n"
+        f"သင် ဖိတ်ခေါ်ထားသူ - *{count}/1* ယောက်။"
+    )
+    
+    await callback.message.edit_text(instructions_text, reply_markup=builder.as_markup(), parse_mode="Markdown")
     await callback.answer()
 
 @dp.chat_join_request()
@@ -270,10 +259,10 @@ async def handle_join_request(update: types.ChatJoinRequest):
             pass
             
     bot_user = await bot.get_me()
-    share_url = f"https://t.me/share/url?url=https://t.me/{bot_user.username}?start=ref_{uid}&text=ညစာ 1.0 VIP Group ဝင်ချင်ရင် ဒီလင့်ခ်ကနေ ဝင်ပါဦး။"
+    share_url = f"https://t.me/share/url?url=https://t.me/{bot_user.username}?start=ref_{uid}&text=ဒီ Bot ထဲကနေ VIP Group ကို ဝင်ဖို့ ဒီလင့်ခ်ကနေ အရင် ဝင်ပေးပါဦး။"
     
     builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(text=f"📢 Share/Forward to Groups", url=share_url))
+    builder.row(InlineKeyboardButton(text=f"📢 Share လုပ်ရန်", url=share_url))
     
     try:
         await bot.send_message(
@@ -281,8 +270,8 @@ async def handle_join_request(update: types.ChatJoinRequest):
             text=f"👋 မင်္ဂလာပါ {update.from_user.first_name}။\n\n"
                  f"သင် Group ဝင်ခွင့်တောင်းထားတာကို လက်ခံရရှိပါတယ်၊ ဒါပေမယ့် စည်းကမ်းချက်အတိုင်း လူ ၁ ယောက် မပြည့်သေးပါဘူးခင်ဗျာ။\n"
                  f"အောက်ကခလုတ်ကို နှိပ်ပြီး လူ (၁) ယောက်ပြည့်အောင် အရင်ဆုံး ခေါ်ပေးပါဦးနော်။\n\n"
-                 f"📊 လက်ရှိ သင့်လင့်ခ်မှ ဝင်လာသူ: [{count}/{REQUIRED_SHARES}] ယောက်။",
-            reply_markup=builder.as_markup()
+                 f"📊 လက်ရှိ သင့်လင့်ခ်မှ ဝင်လာသူ: *{count}/1* ယောက်။",
+            reply_markup=builder.as_markup(), parse_mode="Markdown"
         )
     except Exception:
         pass
