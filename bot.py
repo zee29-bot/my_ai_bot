@@ -48,22 +48,20 @@ def get_user_count(uid):
     res = cursor.fetchone()
     return res[0] if res else 0
 
-def get_latest_video():
-    cursor.execute("SELECT value FROM settings WHERE key='latest_video'")
+def get_setting(key):
+    cursor.execute("SELECT value FROM settings WHERE key=?", (key,))
     res = cursor.fetchone()
     return res[0] if res else None
 
-def set_latest_video(file_id):
-    cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('latest_video', ?)", (file_id,))
+def set_setting(key, value):
+    cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (key, value))
     conn.commit()
 
-# --- ၂၀ စက္ကန့်ပြပြီး ဗီဒီယို ဖျက်ပေးမည့် စနစ် ---
 async def delete_preview_video(chat_id: int, message_id: int, delay: int = 20):
     await asyncio.sleep(delay)
     try:
         await bot.delete_message(chat_id=chat_id, message_id=message_id)
-    except Exception:
-        pass
+    except Exception: pass
 
 # --- MAIN LOGIC FOR USER ---
 async def send_user_home(uid, fname):
@@ -73,10 +71,14 @@ async def send_user_home(uid, fname):
     selected_text = random.choice(SHARE_MESSAGES)
     bot_link = f"https://t.me/{bot_user.username}?start=ref_{uid}"
     
-    # 🌟 မျက်စိနဲ့မမြင်ရတဲ့ စာလုံးအလွတ်ထဲမှာ HTML စနစ်သုံးပြီး ကောင်မလေးပုံကို သန့်သန့်လေး ဝှက်ထည့်လိုက်ပါတယ်
-    hidden_image_link = f'<a href="https://i.ibb.co/BqpCrxH/ZR482YQD.jpg">&#8203;</a>'
-    share_content = f"{hidden_image_link}{selected_text}\n\n{bot_link}"
-    
+    # 📸 မင်းပို့ထားတဲ့ ပုံရှိရင် Share တဲ့အခါ တွဲပေါ်အောင် လုပ်ပေးမယ့်အပိုင်း
+    share_image = get_setting("share_image_url")
+    if share_image:
+        # Telegram Link Preview စနစ်အရ ပုံလင့်ခ်ကို စာသားရဲ့ ရှေ့ဆုံးမှာ အလွတ်ခံပြီး ကပ်ထည့်ပေးထားလို့ စာသားထဲမှာ လင့်ခ်စာတန်းကြီး ပေါ်မနေပါဘူး
+        share_content = f'<a href="{share_image}">&#8203;</a>{selected_text}\n\n{bot_link}'
+    else:
+        share_content = f'{selected_text}\n\n{bot_link}'
+        
     share_url = f"https://t.me/share/url?url={urllib.parse.quote(share_content)}"
 
     builder = InlineKeyboardBuilder()
@@ -93,23 +95,23 @@ async def send_user_home(uid, fname):
         f"လက်ရှိအခြေအနေ: {count}/1 ယောက်।"
     )
     
-    # 🎬 Admin တင်ထားတဲ့ ၂၀ စက္ကန့်ပြ ဗီဒီယိုရှိရင် User ကို အရင်ပို့ပေးပြီး ပြန်ဖျက်ခိုင်းမယ်
-    video_to_send = get_latest_video()
+    # 🎬 ၂၀ စက္ကန့်ပြ ဗီဒီယို
+    video_to_send = get_setting("latest_video")
     if video_to_send:
         try:
-            preview_msg = await bot.send_video(chat_id=uid, video=video_to_send, caption="Preview Video (၂၀ စက္ကန့်သာပြမည်)")
+            preview_msg = await bot.send_video(chat_id=uid, video=video_to_send, caption="🔞 Preview Video (၂၀ စက္ကန့်သာပြမည်)")
             asyncio.create_task(delete_preview_video(chat_id=uid, message_id=preview_msg.message_id, delay=20))
-        except: pass
+        except Exception as e:
+            logging.error(f"Video send error: {e}")
 
-    # parse_mode="HTML" မပါမဖြစ်ထည့်ထားလို့ ပုံလင့်ခ်စာတန်းတွေ လုံးဝမပေါ်ဘဲ ပုံကြီးပဲ ထွက်လာမှာပါ
     await bot.send_message(chat_id=uid, text=text_message, reply_markup=builder.as_markup(), parse_mode="HTML")
 
 # --- MAIN LOGIC FOR ADMIN ---
 async def send_admin_home(uid):
     builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(text="ကိန်းဂဏန်းများကြည့်ရန်", callback_data="admin_stats"))
-    builder.row(InlineKeyboardButton(text="အားလုံးဆီ စာပို့ရန် (Broadcast)", callback_data="admin_broadcast"))
-    await bot.send_message(chat_id=uid, text="Admin Control Panel\n\nလုပ်ဆောင်လိုသည့် လုပ်ငန်းစဉ်ကို ရွေးချယ်ပါ။", reply_markup=builder.as_markup())
+    builder.row(InlineKeyboardButton(text="📊 ကိန်းဂဏန်းများကြည့်ရန်", callback_data="admin_stats"))
+    builder.row(InlineKeyboardButton(text="📢 အားလုံးဆီ စာပို့ရန် (Broadcast)", callback_data="admin_broadcast"))
+    await bot.send_message(chat_id=uid, text="👑 Admin Control Panel 👑\n\nလုပ်ဆောင်လိုသည့် လုပ်ငန်းစဉ်ကို ရွေးချယ်ပါ။\n\n💡 <b>သိကောင်းစရာ:</b>\n- ဗီဒီယိုပို့လိုက်ရင် ၂၀ စက္ကန့်ပြစနစ်ထဲ သိမ်းသွားပါမယ်။\n- ပုံ (Photo) တစ်ပုံ ပို့လိုက်ရင် Share တဲ့နေရာမှာ သုံးမယ့် ပုံအဖြစ် အလိုအလျောက် ပြောင်းလဲသိမ်းဆည်းပေးပါမယ်။", parse_mode="HTML", reply_markup=builder.as_markup())
 
 @dp.message(Command("start"))
 async def start_command(message: types.Message):
@@ -142,11 +144,21 @@ async def start_command(message: types.Message):
     conn.commit()
     await send_user_home(uid, message.from_user.first_name)
 
-# --- ADMIN VIDEO SAVE & BROADCAST ---
+# --- ADMIN VIDEO & PHOTO AUTO SAVE ---
 @dp.message(F.chat.type == "private", F.from_user.id == ADMIN_ID, F.video)
 async def save_admin_preview_video(message: types.Message):
-    set_latest_video(message.video.file_id)
-    await message.reply("Preview ဗီဒီယိုအသစ်ကို သေသေချာချာ သိမ်းဆည်းလိုက်ပါပြီ။ User တွေ /start နှိပ်ရင် ၂၀ စက္ကန့် ပေါ်ပါလိမ့်မယ်။")
+    set_setting("latest_video", message.video.file_id)
+    await message.reply("✅ Preview ဗီဒီယိုအသစ်ကို သိမ်းဆည်းလိုက်ပါပြီ။ User အသစ်တွေ /start နှိပ်ရင် ၂၀ စက္ကန့် ပေါ်ပါလိမ့်မယ်။")
+
+@dp.message(F.chat.type == "private", F.from_user.id == ADMIN_ID, F.photo)
+async def save_admin_share_photo(message: types.Message):
+    # 🌟 မင်း ပုံပို့ပေးလိုက်တာနဲ့ ဒီကုဒ်က Telegram File link အဖြစ် ပြောင်းပြီး Database ထဲ တန်းသိမ်းပေးမှာပါ
+    photo_file_id = message.photo[-1].file_id
+    file_info = await bot.get_file(photo_file_id)
+    direct_url = f"https://api.telegram.org/file/bot{BOT_TOKEN}/{file_info.file_path}"
+    
+    set_setting("share_image_url", direct_url)
+    await message.reply("📸 ရှဲရာတွင်သုံးမည့် ပုံအသစ်ကို အောင်မြင်စွာ ပြောင်းလဲသိမ်းဆည်းလိုက်ပါပြီဗျာ!")
 
 @dp.message(F.chat.type == "private", F.from_user.id == ADMIN_ID, F.reply_to_message)
 async def do_broadcast(message: types.Message):
@@ -241,8 +253,12 @@ async def handle_join_request(update: types.ChatJoinRequest):
     selected_text = random.choice(SHARE_MESSAGES)
     bot_link = f"https://t.me/{bot_user.username}?start=ref_{uid}"
     
-    hidden_image_link = f'<a href="https://i.ibb.co/BqpCrxH/ZR482YQD.jpg">&#8203;</a>'
-    share_content = f"{hidden_image_link}{selected_text}\n\n{bot_link}"
+    share_image = get_setting("share_image_url")
+    if share_image:
+        share_content = f'<a href="{share_image}">&#8203;</a>{selected_text}\n\n{bot_link}'
+    else:
+        share_content = f'{selected_text}\n\n{bot_link}'
+        
     share_url = f"https://t.me/share/url?url={urllib.parse.quote(share_content)}"
     
     builder = InlineKeyboardBuilder()
@@ -250,7 +266,7 @@ async def handle_join_request(update: types.ChatJoinRequest):
     try:
         await bot.send_message(
             chat_id=uid,
-            text=f"မင်္ဂလာပါ {update.from_user.first_name}။\n\nVIP Group ဝင်ခွင့်တောင်းထားတာကို လက်ခံရရှိပါတယ်၊ ဒါပေမယ့် စည်းကမ်းချက်အတိုင်း လူ ၁ ယောက် မပြည့်သေးပါဘူးဗျာ။\nအောက်ကခလုတ်ကို နှိပ်ပြီး လူ (၁) ယောက်ပြည့်အောင် အရင်ဆုံး ခေါ်ပေးပါဦးနော်။\n\nလက်ရှိ သင့်လင့်ခ်မှ ဝင်လာသူ: {count}/1 ယောက်။",
+            text=f"မင်္ဂလာပါ {update.from_user.first_name}။\n\nVIP Group ဝင်ခွင့်တောင်းထားတာကို လက်ခံရရှိပါတယ်၊ ဒါပေမယ့် စည်းကမ်းချက်အတိုင်း လူ ၁ ယောက် မပြည့်သေးပါဘူးဗျာ。\nအောက်ကခလုတ်ကို နှိပ်ပြီး လူ (၁) ယောက်ပြည့်အောင် အရင်ဆုံး ခေါ်ပေးပါဦးနော်。\n\nလက်ရှိ သင့်လင့်ခ်မှ ဝင်လာသူ: {count}/1 ယောက်。",
             reply_markup=builder.as_markup(),
             parse_mode="HTML"
         )
