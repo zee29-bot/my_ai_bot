@@ -79,13 +79,10 @@ async def delete_preview_video(chat_id: int, message_id: int, delay: int = 20):
     except Exception:
         pass
 
-# --- ADMIN PANEL FUNCTIONS VIA CALLBACK ---
+# --- ⚙️ ADMIN CONTROL PANEL (BY BUTTONS) ---
 @dp.callback_query(F.data == "admin_stats")
 async def admin_stats_callback(callback: types.CallbackQuery):
-    if callback.from_user.id != ADMIN_ID:
-        await callback.answer("သင်သည် Admin မဟုတ်ပါ။", show_alert=True)
-        return
-        
+    if callback.from_user.id != ADMIN_ID: return
     cursor.execute("SELECT COUNT(*) FROM users")
     total_users = cursor.fetchone()[0]
     cursor.execute("SELECT COUNT(*) FROM users WHERE count > 0")
@@ -96,19 +93,14 @@ async def admin_stats_callback(callback: types.CallbackQuery):
         f"👥 စုစုပေါင်း User အရေအတွက်: *{total_users}* ယောက်\n"
         f"🔥 အနည်းဆုံး လူ ၁ ယောက်ခေါ်ထားသူ: *{active_sharers}* ယောက်"
     )
-    
     builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(text="🔙 ပင်မစာမျက်နှာသို့", callback_data="admin_back"))
-    
+    builder.row(InlineKeyboardButton(text="🔙 နောက်သို့", callback_data="admin_back"))
     await callback.message.edit_text(stats_text, reply_markup=builder.as_markup(), parse_mode="Markdown")
     await callback.answer()
 
 @dp.callback_query(F.data == "admin_broadcast")
 async def admin_broadcast_callback(callback: types.CallbackQuery):
-    if callback.from_user.id != ADMIN_ID:
-        await callback.answer("သင်သည် Admin မဟုတ်ပါ။", show_alert=True)
-        return
-        
+    if callback.from_user.id != ADMIN_ID: return
     await callback.message.edit_text("📢 *Broadcast စနစ်:*\n\nUser အားလုံးဆီ ပို့ချင်တဲ့စာသား (သို့) ပုံ (သို့) ဗီဒီယိုကို ဒီ Message ကို Reply ပြန်ပြီး ပို့ပေးပါဗျာ။")
     await callback.answer()
 
@@ -117,23 +109,16 @@ async def admin_back_callback(callback: types.CallbackQuery):
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text="📊 ကိန်းဂဏန်းများကြည့်ရန်", callback_data="admin_stats"))
     builder.row(InlineKeyboardButton(text="📢 အားလုံးဆီ စာပို့ရန် (Broadcast)", callback_data="admin_broadcast"))
-    
     await callback.message.edit_text("⚙️ *Admin Control Panel*\n\nလုပ်ဆောင်လိုသည့် လုပ်ငန်းစဉ်ကို ရွေးချယ်ပါ သခင်။", reply_markup=builder.as_markup(), parse_mode="Markdown")
     await callback.answer()
 
 @dp.message(F.chat.type == "private", F.from_user.id == ADMIN_ID, F.reply_to_message)
 async def do_broadcast(message: types.Message):
-    if "User အားလုံးဆီ ပို့ချင်တဲ့စာသား" not in message.reply_to_message.text:
-        return
-        
+    if "User အားလုံးဆီ ပို့ချင်တဲ့စာသား" not in message.reply_to_message.text: return
     cursor.execute("SELECT user_id FROM users")
     users = cursor.fetchall()
-    
-    status_msg = await message.reply(f"⏳ User สုစုပေါင်း {len(users)} ယောက်ဆီသို့ စတင်ပို့ဆောင်နေပါပြီ...")
-    
-    success = 0
-    fail = 0
-    
+    status_msg = await message.reply(f"⏳ User စုစုပေါင်း {len(users)} ယောက်ဆီသို့ စတင်ပို့ဆောင်နေပါပြီ...")
+    success, fail = 0, 0
     for user in users:
         uid = user[0]
         try:
@@ -142,72 +127,56 @@ async def do_broadcast(message: types.Message):
             await asyncio.sleep(0.05)
         except Exception:
             fail += 1
-            
-    await status_msg.edit_text(f"✅ Broadcast ပို့ဆောင်ပြီးပါပြီ။\n\nအောင်မြင်: {success}\nကျရှုံး (Bot Block ထားသူ): {fail}")
+    await status_msg.edit_text(f"✅ Broadcast ပို့ဆောင်ပြီးပါပြီ။\n\nအောင်မြင်: {success}\nကျရှုံး: {fail}")
 
-# --- ADMIN MEDIA SETTING HANDLERS ---
 @dp.message(F.chat.type == "private", F.from_user.id == ADMIN_ID, F.video)
 async def save_admin_preview_video(message: types.Message):
     set_latest_video(message.video.file_id)
-    await message.reply("🎉 အောင်မြင်ပါပြီသခင်! Preview ဗီဒီယိုကို စနစ်တကျ ပြောင်းလဲသိမ်းဆည်းလိုက်ပါပြီ။")
+    await message.reply("🎉 အောင်မြင်ပါပြီသခင်! Preview ဗီဒီယိုကို သိမ်းဆည်းလိုက်ပါပြီ။")
 
 @dp.message(F.chat.type == "private", F.from_user.id == ADMIN_ID, F.photo)
 async def save_admin_share_banner(message: types.Message):
+    # Admin ပို့လိုက်တဲ့ ဓာတ်ပုံ File ID ကို သိမ်းဆည်းလိုက်ခြင်း
     set_share_banner(message.photo[-1].file_id)
-    await message.reply("📸 အောင်မြင်ပါပြီသခင်! User တွေမြင်ရမယ့် Photo Banner ပုံကို ပြောင်းလဲသိမ်းဆည်းလိုက်ပါပြီ။")
+    await message.reply("📸 အောင်မြင်ပါပြီသခင်! User တွေ တခြား gp မှာ သွားရှဲရင် သုံးမယ့် Photo Banner ကို သိမ်းလိုက်ပါပြီ။")
 
-# --- GROUP MESSAGES HANDLING ---
+# --- GROUP MESSAGES AUTO-DELETE ---
 @dp.message(F.chat.id == GROUP_ID)
 async def handle_group_messages(message: types.Message):
     if message.new_chat_members or message.left_chat_member:
-        try:
-            await message.delete()
-        except Exception:
-            pass
+        try: await message.delete()
+        except: pass
         return
-
     has_link = False
     if message.text and (re.search(r"t\.me", message.text, re.IGNORECASE) or message.entities):
         for entity in message.entities or []:
-            if entity.type in ["url", "text_link"]:
-                has_link = True
-                break
-                
+            if entity.type in ["url", "text_link"]: has_link = True; break
     if message.caption and (re.search(r"t\.me", message.caption, re.IGNORECASE) or message.caption_entities):
         for entity in message.caption_entities or []:
-            if entity.type in ["url", "text_link"]:
-                has_link = True
-                break
-
+            if entity.type in ["url", "text_link"]: has_link = True; break
     if has_link:
         try:
             member = await bot.get_chat_member(chat_id=GROUP_ID, user_id=message.from_user.id)
-            if member.status in ["creator", "administrator"]:
-                return  
-            await message.delete()
-        except Exception:
-            pass
+            if member.status not in ["creator", "administrator"]: await message.delete()
+        except: pass
 
-# --- MAIN BOT HANDLERS ---
+# --- MAIN USER PROCESS ---
 @dp.message(Command("start"))
 async def start_command(message: types.Message):
-    if message.chat.type != "private":
-        return
-        
+    if message.chat.type != "private": return
     uid = message.from_user.id
     uname = message.from_user.username or ""
     fname = message.from_user.first_name or "User"
     args = message.text.split()
     
-    # --- ADMIN MAIN INTERFACE ---
+    # --- ADMIN INTERFACE (ခလုတ်တွေနဲ့ပဲ ပြထားပေးပါတယ်) ---
     if uid == ADMIN_ID:
         builder = InlineKeyboardBuilder()
         builder.row(InlineKeyboardButton(text="📊 ကိန်းဂဏန်းများကြည့်ရန်", callback_data="admin_stats"))
         builder.row(InlineKeyboardButton(text="📢 အားလုံးဆီ စာပို့ရန် (Broadcast)", callback_data="admin_broadcast"))
-        await message.answer("⚙️ *Admin Control Panel*\n\nလုပ်ဆောင်လိုသည့် လုပ်ငန်းစဉ်ကို ရွေးချယ်ပါ သခင်။", reply_markup=builder.as_markup(), parse_mode="Markdown")
+        await message.answer("⚙️ *Admin Control Panel*\n\nလုပ်ဆောင်လိုသည့် လုပ်ငန်းစဉ်ကို ရွေးချယ်ပါ သခင်။\n\n💡 *လမ်းညွှန်:* User တွေရှဲရင် ပေါ်မယ့် ဓာတ်ပုံကို ပြောင်းချင်ရင် ဒီ chat ထဲကို ပုံတစ်ပုံ တိုက်ရိုက် ပို့ပေးလိုက်ရုံပါပဲဗျာ။", reply_markup=builder.as_markup(), parse_mode="Markdown")
         return
 
-    # --- USER PROCESS ---
     cursor.execute("SELECT user_id FROM users WHERE user_id=?", (uid,))
     user_exists = cursor.fetchone()
     
@@ -220,7 +189,6 @@ async def start_command(message: types.Message):
                     cursor.execute("INSERT OR IGNORE INTO users (user_id, count, username, first_name) VALUES (?, 0, '', '')", (referrer_id,))
                     cursor.execute("UPDATE users SET count = count + 1 WHERE user_id=?", (referrer_id,))
                     conn.commit()
-                    
                     current_points = get_user_count(referrer_id)
                     try:
                         if current_points >= REQUIRED_SHARES:
@@ -228,156 +196,112 @@ async def start_command(message: types.Message):
                             await bot.send_message(referrer_id, "🎉 အောင်မြင်ပါပြီ! လူ ၁ ယောက် ဝင်လာခဲ့လို့ Group ထဲ auto သွတ်သွင်းပေးလိုက်ပါပြီ။")
                         else:
                             await bot.send_message(referrer_id, f"➕ လူသစ်တစ်ယောက် တိုးလာပါပြီ။ လက်ရှိ: {current_points}/{REQUIRED_SHARES} ယောက်။")
-                    except Exception:
-                        pass
-            except ValueError:
-                pass
-        
+                    except: pass
+            except ValueError: pass
         cursor.execute("INSERT INTO users (user_id, count, referred_by, username, first_name) VALUES (?, 0, ?, ?, ?)", (uid, referrer_id, uname, fname))
         conn.commit()
     else:
         cursor.execute("UPDATE users SET username=?, first_name=? WHERE user_id=?", (uname, fname, uid))
         conn.commit()
 
-    bot_user = await bot.get_me()
-    share_text = "ဒီ Bot ထဲကနေ VIP Group ကို အခမဲ့ ဝင်လို့ရနေပြီနော်။ အမြန်ဆုံး ဝင်ထားလိုက်တော့ 👇👇"
-    share_url = f"https://t.me/share/url?url=https://t.me/{bot_user.username}?start=ref_{uid}&text={share_text}"
+    await send_user_home(uid, fname)
+
+async def send_user_home(uid, fname):
     count = get_user_count(uid)
+    bot_user = await bot.get_me()
+    banner_to_send = get_share_banner()
+    
+    # 🔗 စာသားထဲမှာ မင်မင်သတ်မှတ်ထားတဲ့ ဓာတ်ပုံရဲ့ File Link ကို Telegram က Auto Image Preview ပြောင်းပေးဖို့ တွဲထည့်ထားပါတယ်
+    if banner_to_send:
+        # Telegram ရဲ့ internal link template ကို သုံးပြီး အပြင် gp မှာ ပုံ auto ပေါ်အောင် လုပ်ထားခြင်း
+        share_text = f"https://t.me/{bot_user.username}?start=ref_{uid}\n\nဒီ Bot ထဲကနေ VIP Group ကို အခမဲ့ ဝင်လို့ရနေပြီနော်။ အမြန်ဆုံး ဝင်ထားလိုက်တော့ 👇👇"
+    else:
+        share_text = f"ဒီ Bot ထဲကနေ VIP Group ကို အခမဲ့ ဝင်လို့ရနေပြီနော်။ အမြန်ဆုံး ဝင်ထားလိုက်တော့ 👇👇"
+        
+    share_url = f"https://t.me/share/url?url=https://t.me/{bot_user.username}?start=ref_{uid}&text={share_text}"
 
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text="🔓 VIP Group ဝင်ခွင့်တောင်းရန်", url=GROUP_REQUEST_LINK))
     builder.row(InlineKeyboardButton(text="📢 အခြား Group များသို့ ရှဲရန်", url=share_url))
-    builder.row(InlineKeyboardButton(text="🏆 Top 10 Leaderboard ကိုကြည့်ရန်", callback_data="show_leaderboard"))
+    builder.row(InlineKeyboardButton(text="📊 သင့်ရဲ့ လက်ရှိအခြေအနေ (Status)", callback_data="check_status"))
+    builder.row(InlineKeyboardButton(text="🏆 Top 10 Leaderboard", callback_data="show_leaderboard"))
     
     instructions_text = (
         f"👋 မင်္ဂလာပါ *{fname}*,\n\n"
         f"✅ *VIP Group ဝင်ရန် နည်းလမ်း*\n"
-        f"၁။ 'VIP Group ဝင်ခွင့်တောင်းရန်' ခလုတ်ကို နှိပ်ထားပါ။\n"
-        f"၂။ 'အခြား Group များသို့ ရှဲရန်' ခလုတ်ကို နှိပ်ပြီး သူငယ်ချင်း (၁) ယောက်ကို ဖိတ်ခေါ်ပေးပါ။\n\n"
+        f"၁။ အောက်က '🔓 VIP Group ဝင်ခွင့်တောင်းရန်' ခလုတ်ကို အရင်နှိပ်ထားပါ။\n"
+        f"၂။ '📢 အခြား Group များသို့ ရှဲရန်' ခလုတ်ကို နှိပ်ပြီး သူငယ်ချင်း (၁) ယောက်ကို ဖိတ်ခေါ်ပေးပါ။\n\n"
         f"📊 *လက်ရှိအခြေအနေ*\n"
         f"သင် ဖိတ်ခေါ်ထားသူ - *{count}/1* ယောက်။"
     )
 
-    banner_to_send = get_share_banner()
     video_to_send = get_latest_video()
-    
     if video_to_send:
         try:
-            preview_msg = await bot.send_video(
-                chat_id=uid,
-                video=video_to_send,
-                caption="⏳ *Preview Video (၂၀ စက္ကန့်သာပြမည်)*",
-                parse_mode="Markdown"
-            )
+            preview_msg = await bot.send_video(chat_id=uid, video=video_to_send, caption="⏳ *Preview Video (၂၀ စက္ကန့်သာပြမည်)*", parse_mode="Markdown")
             asyncio.create_task(delete_preview_video(chat_id=uid, message_id=preview_msg.message_id, delay=20))
-        except Exception:
-            pass
-            
-    if banner_to_send:
-        try:
-            await bot.send_photo(chat_id=uid, photo=banner_to_send, caption=instructions_text, reply_markup=builder.as_markup(), parse_mode="Markdown")
-        except Exception:
-            await message.answer(instructions_text, reply_markup=builder.as_markup(), parse_mode="Markdown")
-    else:
-        await message.answer(instructions_text, reply_markup=builder.as_markup(), parse_mode="Markdown")
+        except: pass
 
-# --- LEADERBOARD INTERFACE ---
+    if banner_to_send:
+        try: await bot.send_photo(chat_id=uid, photo=banner_to_send, caption=instructions_text, reply_markup=builder.as_markup(), parse_mode="Markdown")
+        except: await bot.send_message(chat_id=uid, text=instructions_text, reply_markup=builder.as_markup(), parse_mode="Markdown")
+    else:
+        await bot.send_message(chat_id=uid, text=instructions_text, reply_markup=builder.as_markup(), parse_mode="Markdown")
+
+# --- CALLBACK HANDLERS FOR USER BUTTONS ---
+@dp.callback_query(F.data == "check_status")
+async def check_status_callback(callback: types.CallbackQuery):
+    uid = callback.from_user.id
+    count = get_user_count(uid)
+    await callback.answer(f"📊 လက်ရှိ သင်ဖိတ်ခေါ်ထားသူ: {count}/1 ယောက်", show_alert=True)
+
 @dp.callback_query(F.data == "show_leaderboard")
 async def leaderboard_callback(callback: types.CallbackQuery):
     cursor.execute("SELECT user_id, username, first_name, count FROM users WHERE count > 0 ORDER BY count DESC LIMIT 10")
     top_users = cursor.fetchall()
-    
     text = "🏆 *Top 10 - လူခေါ်နိုင်သူများ*\n\n"
-    if not top_users:
-        text += "လက်ရှိတွင် လူခေါ်ထားသူ မရှိသေးပါ။"
+    if not top_users: text += "လက်ရှိတွင် လူခေါ်ထားသူ မရှိသေးပါ။"
     else:
         for i, user in enumerate(top_users, 1):
             user_id, username, first_name, count = user
-            if username and username.strip():
-                user_display = f"@{username}"
-            else:
-                safe_name = re.sub(r'[_*`\[\]()]', '', first_name) if first_name else "User"
-                user_display = f"[{safe_name}](tg://user?id={user_id})"
+            user_display = f"@{username}" if username and username.strip() else f"[{re.sub(r'[_*`\[\]()]', '', first_name or 'User')}](tg://user?id={user_id})"
             text += f"{i}️⃣ {user_display} — *{count}* ယောက်\n"
-            
     text += "\n🚀 သင်လည်း အဆင့် (၁) ရအောင် အခုပဲ သူငယ်ချင်းတွေကို ထပ်ဖိတ်ခေါ်လိုက်ပါ!"
-    
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text="🔙 နောက်သို့", callback_data="back_to_start"))
-    
-    try:
-        await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="Markdown")
-    except Exception:
-        try:
-            await callback.message.edit_caption(caption=text, reply_markup=builder.as_markup(), parse_mode="Markdown")
-        except Exception:
-            pass
+    try: await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="Markdown")
+    except:
+        try: await callback.message.edit_caption(caption=text, reply_markup=builder.as_markup(), parse_mode="Markdown")
+        except: pass
     await callback.answer()
 
 @dp.callback_query(F.data == "back_to_start")
 async def back_to_start_callback(callback: types.CallbackQuery):
-    uid = callback.from_user.id
-    fname = callback.from_user.first_name
-    count = get_user_count(uid)
-    bot_user = await bot.get_me()
-    share_text = "ဒီ Bot ထဲကနေ VIP Group ကို အခမဲ့ ဝင်လို့ရနေပြီနော်။ အမြန်ဆုံး ဝင်ထားလိုက်တော့ 👇👇"
-    share_url = f"https://t.me/share/url?url=https://t.me/{bot_user.username}?start=ref_{uid}&text={share_text}"
-    
-    builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(text="🔓 VIP Group ဝင်ခွင့်တောင်းရန်", url=GROUP_REQUEST_LINK))
-    builder.row(InlineKeyboardButton(text="📢 အခြား Group များသို့ ရှဲရန်", url=share_url))
-    builder.row(InlineKeyboardButton(text="🏆 Top 10 Leaderboard ကိုကြည့်ရန်", callback_data="show_leaderboard"))
-    
-    instructions_text = (
-        f"👋 မင်္ဂလာပါ *{fname}*,\n\n"
-        f" *VIP Group ဝင်ရန် နည်းလမ်း*\n"
-        f" 'VIP Group ဝင်ခွင့်တောင်းရန်' ခလုတ်ကို နှိပ်ထားပါ။\n"
-        f" 'အခြား Group များသို့ ရှဲရန်' ခလုတ်ကို နှိပ်ပြီး သူငယ်ချင်း (၁) ယောက်ကို ဖိတ်ခေါ်ပေးပါ။\n\n"
-        f" *လက်ရှိအခြေအနေ*\n"
-        f"သင် ဖိတ်ခေါ်ထားသူ - *{count}/1* ယောက်။"
-    )
-    
-    try:
-        await callback.message.edit_text(instructions_text, reply_markup=builder.as_markup(), parse_mode="Markdown")
-    except Exception:
-        try:
-            await callback.message.edit_caption(caption=instructions_text, reply_markup=builder.as_markup(), parse_mode="Markdown")
-        except Exception:
-            pass
+    try: await callback.message.delete()
+    except: pass
+    await send_user_home(callback.from_user.id, callback.from_user.first_name)
     await callback.answer()
 
 @dp.chat_join_request()
 async def handle_join_request(update: types.ChatJoinRequest):
     uid = update.from_user.id
     count = get_user_count(uid)
-    
     if count >= REQUIRED_SHARES:
-        try:
-            await bot.approve_chat_join_request(chat_id=GROUP_ID, user_id=uid)
-            return
-        except Exception:
-            pass
-            
+        try: await bot.approve_chat_join_request(chat_id=GROUP_ID, user_id=uid); return
+        except: pass
     bot_user = await bot.get_me()
-    share_text = "ဒီ Bot ထဲကနေ VIP Group ကို အခမဲ့ ဝင်လို့ရနေပြီနော်။ အမြန်ဆုံး ဝင်ထားလိုက်တော့ 👇👇"
+    share_text = f"ဒီ Bot ထဲကနေ VIP Group ကို အခမဲ့ ဝင်လို့ရနေပြီနော်။ အမြန်ဆုံး ဝင်ထားလိုက်တော့ 👇👇"
     share_url = f"https://t.me/share/url?url=https://t.me/{bot_user.username}?start=ref_{uid}&text={share_text}"
-    
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text=f"📢 Share လုပ်ရန်", url=share_url))
-    
     try:
         await bot.send_message(
             chat_id=uid,
-            text=f"👋 မင်္ဂလာပါ {update.from_user.first_name}။\n\n"
-                 f"သင် Group ဝင်ခွင့်တောင်းထားတာကို လက်ခံရရှိပါတယ်၊ ဒါပေမယ့် စည်းကမ်းချက်အတိုင်း လူ ခြေရာ မပြည့်သေးပါဘူးခင်ဗျာ။\n"
-                 f"အောက်ကခလုတ်ကို နှိပ်ပြီး လူ (၁) ယောက်ပြည့်အောင် အရင်ဆုံး ခေါ်ပေးပါဦးနော်။\n\n"
-                 f"📊 လက်ရှိ သင့်လင့်ခ်မှ ဝင်လာသူ: *{count}/1* ယောက်။",
+            text=f"👋 မင်္ဂလာပါ {update.from_user.first_name}။\n\nVIP Group ဝင်ခွင့်တောင်းထားတာကို လက်ခံရရှိပါတယ်၊ ဒါပေမယ့် စည်းကမ်းချက်အတိုင်း လူ ၁ ယောက် မပြည့်သေးပါဘူးဗျာ။\nအောက်ကခလုတ်ကို နှိပ်ပြီး လူ (၁) ယောက်ပြည့်အောင် အရင်ဆုံး ခေါ်ပေးပါဦးနော်။\n\n📊 လက်ရှိ သင့်လင့်ခ်မှ ဝင်လာသူ: *{count}/1* ယောက်။",
             reply_markup=builder.as_markup(), parse_mode="Markdown"
         )
-    except Exception:
-        pass
+    except: pass
 
-# --- SERVER STARTUP ---
 async def on_startup(bot: Bot) -> None:
     await bot.set_webhook(WEBHOOK_URL)
 
