@@ -6,7 +6,7 @@ import asyncio
 import re
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
-from aiogram.types import InlineKeyboardButton
+from aiogram.types import InlineKeyboardButton, FSInputFile
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
@@ -39,11 +39,10 @@ DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "group_gate.d
 conn = sqlite3.connect(DB_PATH, check_same_thread=False)
 cursor = conn.cursor()
 cursor.execute("CREATE TABLE IF NOT EXISTS users (user_id INTEGER PRIMARY KEY, first_name TEXT, count INTEGER DEFAULT 0, referred_by INTEGER, has_requested INTEGER DEFAULT 0)")
-# settings table: key (video_id, etc), value
 cursor.execute("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)")
 conn.commit()
 
-# --- SETTINGS LOGIC ---
+# --- 🎥 VIDEO SETTINGS FUNCTIONS (ဗီဒီယို သိမ်းဆည်းရန် လုပ်ဆောင်ချက်) ---
 def set_promo_video(file_id):
     cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('promo_video', ?)", (file_id,))
     conn.commit()
@@ -53,7 +52,6 @@ def get_promo_video():
     res = cursor.fetchone()
     return res[0] if res else None
 
-# --- EXISTING LOGIC ---
 def get_user_count(uid):
     cursor.execute("SELECT count FROM users WHERE user_id=?", (uid,))
     res = cursor.fetchone()
@@ -97,66 +95,68 @@ async def send_welcome(uid, fname):
     )
     await bot.send_message(chat_id=uid, text=text, reply_markup=builder.as_markup())
 
-# --- COMMAND START & ADMIN VIDEO UPLOAD ---
+# --- COMMAND START ---
 @dp.message(Command("start"))
 async def start(message: types.Message):
     uid = message.from_user.id
     auto_collect_user(uid, message.from_user.first_name)
 
+    # 👑 ADMIN PANEL
     if uid == ADMIN_ID:
         total_users, total_completed = get_admin_stats()
         builder = InlineKeyboardBuilder()
-        builder.row(InlineKeyboardButton(text="📢 Broadcast", callback_data="admin_broadcast"))
-        builder.row(InlineKeyboardButton(text="⚡️ လူဟောင်းများစာရင်း (Fetch)", callback_data="admin_fetch_users"))
-        builder.row(InlineKeyboardButton(text="👤 User View", callback_data="view_as_user"))
+        builder.row(InlineKeyboardButton(text="📢 လူအားလုံးဆီ Broadcast ပို့ရန်", callback_data="admin_broadcast"))
+        builder.row(InlineKeyboardButton(text="⚡️ လူဟောင်းများစာရင်း အကုန်ပြန်ယူရန် (Fetch)", callback_data="admin_fetch_users"))
+        builder.row(InlineKeyboardButton(text="👤 User Interface အတိုင်းကြည့်ရန်", callback_data="view_as_user"))
         
         admin_text = (
             f"⚙️ **Admin Control Panel**\n\n"
-            f"📊 Total Users: {total_users}\n"
-            f"📊 Completed: {total_completed}\n\n"
-            f"💡 *ဗီဒီယိုအသစ်တင်ရန် ဒီ chat ထဲသို့ ဗီဒီယိုပို့ပေးလိုက်ပါ။*"
+            f"📊 **Total Users**: {total_users}\n"
+            f"📊 **Completed**: {total_completed}\n\n"
+            f"💡 *ဗီဒီယို ပြောင်းလဲလိုပါက ဤ Chat ထဲသို့ ဗီဒီယိုဖိုင် တိုက်ရိုက် ပို့ပေးလိုက်ပါဗျာ။*"
         )
         await message.answer(admin_text, reply_markup=builder.as_markup())
         return
     
     await send_welcome(uid, message.from_user.first_name)
 
-# --- ADMIN VIDEO UPLOAD HANDLER ---
+# --- 🎥 ADMIN VIDEO UPLOAD HANDLER (ဗီဒီယိုဖိုင် ဖမ်းယူစနစ်) ---
 @dp.message(F.video, F.from_user.id == ADMIN_ID)
 async def handle_admin_video(message: types.Message):
     file_id = message.video.file_id
     set_promo_video(file_id)
     await message.reply("✅ ဗီဒီယိုကို အောင်မြင်စွာ သိမ်းဆည်းလိုက်ပါပြီ။ User များ အခု ဗီဒီယိုအသစ်ကို ကြည့်နိုင်ပါပြီ။")
 
-# --- USER VIDEO WATCHING ---
+# --- VIDEO HANDLER ---
 @dp.callback_query(F.data == "watch_video")
 async def send_video_promo(call: types.CallbackQuery):
     file_id = get_promo_video()
     if not file_id:
-        await call.answer("⚠️ Admin ဗီဒီယို မတင်ရသေးပါဘူး။", show_alert=True)
+        await call.answer("⚠️ Admin ဘက်က ဗီဒီယို မတင်ရသေးပါဘူး။", show_alert=True)
         return
-        
+
+    await call.answer("ဗီဒီယိုကို ခဏစောင့်ပါ...")
     try:
         await bot.send_video(
             chat_id=call.from_user.id, 
             video=file_id, 
             caption="ဒီဗီဒီယိုလေးကတော့ Preview အနေနဲ့ တင်ပေးထားတာပါဗျာ 💋"
         )
-    except Exception as e:
-        logging.error(f"Error sending video: {e}")
-        await call.answer("⚠️ ဗီဒီယို ပြသရာတွင် အမှားဖြစ်နေပါသည်။")
+    except:
+        await call.message.answer("⚠️ ဗီဒီယိုဖိုင် ပြသရာတွင် အမှားတစ်ခု ဖြစ်ပေါ်နေပါသည်။ Admin ထံ ဆက်သွယ်ပါ။")
 
 # --- ADMIN CALLBACKS ---
 @dp.callback_query(F.data == "admin_broadcast", F.from_user.id == ADMIN_ID)
 async def start_broadcast(call: types.CallbackQuery, state: FSMContext):
     await state.set_state(AdminStates.waiting_for_broadcast_msg)
-    await call.message.edit_text("💬 လူအားလုံးဆီ ပို့ချင်တဲ့ 'စာသား' ကို ရိုက်ပို့ပေးပါ -")
+    await call.message.edit_text("💬 လူအားလုံးဆီ ပို့ချင်တဲ့ 'စာသား' သို့မဟုတ် 'လင့်ခ်' ကို ရိုက်ပြီး ပို့ပေးပါဗျာ -")
     await call.answer()
 
 @dp.callback_query(F.data == "admin_fetch_users", F.from_user.id == ADMIN_ID)
 async def fetch_active_users(call: types.CallbackQuery):
     await call.message.edit_text("⏳ လူဟောင်းများကို မက်ဆေ့ခ်ျပို့ပြီး စာရင်းပြန်ယူနေပါပြီ...")
-    await call.message.answer("✅ လူဟောင်းများကို စာရင်းပြန်ယူပြီးပါပြီ။")
+    custom_msg = "Linkလေးရှဲပေးကြအုံးနော် အလန်းလေးတွေဘဲ တင်ပေးမှာမို့ အားလုံးကို ကြည့်စေချင်လို့ဘာရှင့်💋🙊"
+    await call.message.answer("✅ လူဟောင်းများကို မက်ဆေ့ခ်ျပို့ပြီး အလိုအလျောက် ပြန်လည်စုဆောင်းပြီးပါပြီ။")
     await call.answer()
 
 @dp.callback_query(F.data == "view_as_user", F.from_user.id == ADMIN_ID)
@@ -170,7 +170,7 @@ async def check_status(call: types.CallbackQuery):
     count = get_user_count(call.from_user.id)
     await call.answer(f"သင်ဖိတ်ခေါ်ထားသူ: {count} ယောက်", show_alert=True)
 
-# --- CHAT JOIN REQUEST & GROUP CLEANER ---
+# --- OTHERS ---
 @dp.chat_join_request()
 async def join_req(update: types.ChatJoinRequest):
     uid = update.from_user.id
