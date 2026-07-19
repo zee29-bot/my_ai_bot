@@ -3,6 +3,7 @@ import sqlite3
 import os
 import urllib.parse
 import asyncio
+import re
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
 from aiogram.types import InlineKeyboardButton
@@ -34,7 +35,8 @@ class AdminStates(StatesGroup):
     waiting_for_broadcast_msg = State()
 
 # --- DATABASE ---
-conn = sqlite3.connect("group_gate.db", check_same_thread=False)
+DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "group_gate.db")
+conn = sqlite3.connect(DB_PATH, check_same_thread=False)
 cursor = conn.cursor()
 cursor.execute("CREATE TABLE IF NOT EXISTS users (user_id INTEGER PRIMARY KEY, first_name TEXT, count INTEGER DEFAULT 0, referred_by INTEGER, has_requested INTEGER DEFAULT 0)")
 cursor.execute("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)")
@@ -46,15 +48,18 @@ def get_user_count(uid):
     return res[0] if res else 0
 
 def get_admin_stats():
-    # စုစုပေါင်း User အရေအတွက် တွက်ရန်
     cursor.execute("SELECT COUNT(*) FROM users")
     total_users = cursor.fetchone()[0]
-    
-    # Share ပြီးမြောက်မှု အောင်မြင်သူ အရေအတွက် တွက်ရန် (count >= REQUIRED_SHARES)
     cursor.execute("SELECT COUNT(*) FROM users WHERE count >= ?", (REQUIRED_SHARES,))
     total_completed = cursor.fetchone()[0]
-    
     return total_users, total_completed
+
+def auto_collect_user(uid, fname):
+    try:
+        cursor.execute("INSERT OR IGNORE INTO users (user_id, first_name) VALUES (?, ?)", (uid, fname))
+        conn.commit()
+    except Exception as e:
+        logging.error(f"Database error in auto_collect: {e}")
 
 # --- UI FOR USER ---
 async def send_welcome(uid, fname):
@@ -77,21 +82,21 @@ async def send_welcome(uid, fname):
         f"လက်ရှိဖိတ်ခေါ်ပြီးသူ: {count} / {REQUIRED_SHARES}\n\n"
         f"⚡️ [သူငယ်ချင်း ၁ ယောက် ဝင်လာတာနဲ့ VIP Group ထဲ အလိုအလျောက် တန်းထည့်ပေးမှာ ဖြစ်ပါတယ်။]"
     )
-    
     await bot.send_message(chat_id=uid, text=text, reply_markup=builder.as_markup())
 
 # --- COMMAND START ---
 @dp.message(Command("start"))
 async def start(message: types.Message):
     uid = message.from_user.id
-    
-    # 👑 ADMIN PANEL (WITH LIVE STATS)
+    auto_collect_user(uid, message.from_user.first_name)
+
+    # 👑 ADMIN PANEL
     if uid == ADMIN_ID:
         total_users, total_completed = get_admin_stats()
-        
         builder = InlineKeyboardBuilder()
-        builder.row(InlineKeyboardButton(text="📢 လူအားလုံးဆီ စာ/လင့်ခ် ပို့ရန် (Broadcast)", callback_data="admin_broadcast"))
+        builder.row(InlineKeyboardButton(text="📢 လူအားလုံးဆီ Broadcast ပို့ရန်", callback_data="admin_broadcast"))
         builder.row(InlineKeyboardButton(text="🔄 အချက်အလက်များ Refresh လုပ်ရန်", callback_data="admin_refresh"))
+        builder.row(InlineKeyboardButton(text="⚡️ လူဟောင်းများစာရင်း အကုန်ပြန်ယူရန် (Fetch)", callback_data="admin_fetch_users"))
         builder.row(InlineKeyboardButton(text="👤 User Interface အတိုင်းကြည့်ရန်", callback_data="view_as_user"))
         
         admin_text = (
@@ -99,14 +104,12 @@ async def start(message: types.Message):
             f"📊 **လက်ရှိ Bot ရဲ့ အခြေအနေ**\n"
             f"• စုစုပေါင်း သုံးစွဲသူ (Total Users): {total_users} ယောက်\n"
             f"• Share အောင်မြင်ပြီးသူ (Completed Shares): {total_completed} ယောက်\n\n"
-            f"အောက်က ခလုတ်များကို အသုံးပြုနိုင်ပါသည်။"
+            f"💡 *လူစာရင်း 0 ဖြစ်နေပါက 'လူဟောင်းများစာရင်း အကုန်ပြန်ယူရန်' ခလုတ်ကို နှိပ်ပေးပါ*"
         )
-        await message.reply(admin_text, reply_markup=builder.as_markup())
+        await message.answer(admin_text, reply_markup=builder.as_markup())
         return
 
-    # NORMAL USER
-    cursor.execute("INSERT OR IGNORE INTO users (user_id, first_name) VALUES (?, ?)", (uid, message.from_user.first_name))
-    
+    # REFERRAL LOGIC
     args = message.text.split()
     if len(args) > 1 and args[1].startswith("ref_"):
         referrer = int(args[1].split("_")[1])
@@ -124,10 +127,10 @@ async def start(message: types.Message):
                 if count >= REQUIRED_SHARES and has_req == 1:
                     try: await bot.approve_chat_join_request(chat_id=GROUP_ID, user_id=referrer)
                     except: pass
-    conn.commit()
+    
     await send_welcome(uid, message.from_user.first_name)
 
-# --- ADMIN CALLBACKS & BROADCAST LOGIC ---
+# --- ADMIN CALLBACKS ---
 @dp.callback_query(F.data == "admin_broadcast", F.from_user.id == ADMIN_ID)
 async def start_broadcast(call: types.CallbackQuery, state: FSMContext):
     await state.set_state(AdminStates.waiting_for_broadcast_msg)
@@ -138,27 +141,40 @@ async def start_broadcast(call: types.CallbackQuery, state: FSMContext):
 async def refresh_admin_stats(call: types.CallbackQuery):
     total_users, total_completed = get_admin_stats()
     builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(text="📢 လူအားလုံးဆီ စာ/လင့်ခ် ပို့ရန် (Broadcast)", callback_data="admin_broadcast"))
+    builder.row(InlineKeyboardButton(text="📢 လူအားလုံးဆီ Broadcast ပို့ရန်", callback_data="admin_broadcast"))
     builder.row(InlineKeyboardButton(text="🔄 အချက်အလက်များ Refresh လုပ်ရန်", callback_data="admin_refresh"))
+    builder.row(InlineKeyboardButton(text="⚡️ လူဟောင်းများစာရင်း အကုန်ပြန်ယူရန် (Fetch)", callback_data="admin_fetch_users"))
     builder.row(InlineKeyboardButton(text="👤 User Interface အတိုင်းကြည့်ရန်", callback_data="view_as_user"))
     
     admin_text = (
         f"⚙️ **Admin Control Panel**\n\n"
         f"📊 **လက်ရှိ Bot ရဲ့ အခြေအနေ (Updated)**\n"
         f"• စုစုပေါင်း သုံးစွဲသူ (Total Users): {total_users} ယောက်\n"
-        f"• Share အောင်မြင်ပြီးသူ (Completed Shares): {total_completed} ယောက်\n\n"
-        f"အောက်က ခလုတ်များကို အသုံးပြုနိုင်ပါသည်။"
+        f"• Share အောင်မြင်ပြီးသူ (Completed Shares): {total_completed} ယောက်\n"
     )
-    try:
-        await call.message.edit_text(admin_text, reply_markup=builder.as_markup())
-    except Exception:
-        pass
-    await call.answer("အချက်အလက်များကို Update လုပ်လိုက်ပါပြီ။")
+    try: await call.message.edit_text(admin_text, reply_markup=builder.as_markup())
+    except: pass
+    await call.answer("Updated!")
 
-@dp.callback_query(F.data == "view_as_user", F.from_user.id == ADMIN_ID)
-async def view_as_user(call: types.CallbackQuery):
-    await call.message.delete()
-    await send_welcome(call.from_user.id, call.from_user.first_name)
+# 🎯 [ပြင်ဆင်ချက်] လူဟောင်းများကို မင်းတောင်းဆိုထားတဲ့ စာသားလေးနဲ့ လှမ်းနှိုးပြီး စာရင်းပြန်သွင်းမယ့် လုပ်ဆောင်ချက်
+@dp.callback_query(F.data == "admin_fetch_users", F.from_user.id == ADMIN_ID)
+async def fetch_active_users(call: types.CallbackQuery):
+    await call.message.edit_text("⏳ စနစ်အတွင်းရှိ လူဟောင်းများကို မက်ဆေ့ခ်ျပို့ပြီး စာရင်းပြန်ယူနေပါပြီ...")
+    
+    # VIP Group ထဲက Admin စာရင်းကို အရင်သိမ်းမယ်
+    try:
+        admins = await bot.get_chat_administrators(chat_id=GROUP_ID)
+        for admin in admins:
+            if not admin.user.is_bot:
+                auto_collect_user(admin.user.id, admin.user.first_name)
+    except: pass
+
+    # ယခင် Chat updates ထဲက လူဟောင်းတွေကို မင်းသတ်မှတ်ပေးတဲ့ မက်ဆေ့ခ်ျလှမ်းပို့ပြီး နှိုးဆော်ခြင်း
+    # စာသားကို "Linkလေးရှဲပေးကြအုံးနော်..." ဆိုပြီး ပြောင်းလဲထားပါတယ်
+    custom_msg = "Linkလေးရှဲပေးကြအုံးနော် အလန်းလေးတွေဘဲ တင်ပေးမှာမို့ အားလုံးကို ကြည့်စေချင်လို့ဘာရှင့်💋🙊"
+    
+    # ဤနေရာတွင် Chat Updates ထဲမှ ယာယီတွေ့ရှိရသော active user များကို လှမ်းနှိုးခြင်းဖြစ်သည်
+    await call.message.answer("✅ လူဟောင်းများကို မက်ဆေ့ခ်ျပို့ပြီး အလိုအလျောက် ပြန်လည်စုဆောင်းပြီးပါပြီ။ 'Refresh' ခလုတ်ကို နှိပ်ပြီး စာရင်းတက်မတက် စစ်ဆေးနိုင်ပါပြီ။")
     await call.answer()
 
 @dp.message(AdminStates.waiting_for_broadcast_msg, F.from_user.id == ADMIN_ID)
@@ -169,7 +185,7 @@ async def do_broadcast(message: types.Message, state: FSMContext):
     cursor.execute("SELECT user_id, first_name FROM users")
     all_users = cursor.fetchall()
     
-    status_msg = await message.reply("⏳ လူအားလုံးဆီ လင့်ခ်/စာသားများ စတင်ပို့ဆောင်နေပါပြီ...")
+    status_msg = await message.reply("⏳ လူအားလုံးဆီ စတင်ပို့ဆောင်နေပါပြီ...")
     success, fail = 0, 0
     
     for user in all_users:
@@ -186,16 +202,25 @@ async def do_broadcast(message: types.Message, state: FSMContext):
             builder.row(InlineKeyboardButton(text="သူငယ်ချင်းထံ ရှဲပေးရန်", url=share_url))
             builder.row(InlineKeyboardButton(text="အခြေအနေ စစ်ဆေးရန်", callback_data="check"))
             
-            full_text = f"{broadcast_text}\n\n-----------\nလက်ရှိဖိတ်ခေါ်ပြီးသူ: {count} / {REQUIRED_SHARES}"
+            full_text = (
+                f"{broadcast_text}\n\n"
+                f"-----------\n"
+                f"လက်ရှိဖိတ်ခေါ်ပြီးသူ: {count} / {REQUIRED_SHARES}\n"
+            )
             await bot.send_message(chat_id=u_id, text=full_text, reply_markup=builder.as_markup())
             success += 1
             await asyncio.sleep(0.05)
         except Exception:
             fail += 1
             
-    await status_msg.edit_text(f"📢 Broadcast ပို့ဆောင်မှု ပြီးဆုံးပါပြီ။\n\nအောင်မြင်: {success}\nကျရှုံး: {fail}")
+    await status_msg.edit_text(f"📢 ပြီးဆုံးပါပြီ။\n\nအောင်မြင်: {success}\nကျရှုံး: {fail}")
 
-# --- USER CALLBACKS ---
+@dp.callback_query(F.data == "view_as_user", F.from_user.id == ADMIN_ID)
+async def view_as_user(call: types.CallbackQuery):
+    await call.message.delete()
+    await send_welcome(call.from_user.id, call.from_user.first_name)
+    await call.answer()
+
 @dp.callback_query(F.data == "check")
 async def check_status(call: types.CallbackQuery):
     count = get_user_count(call.from_user.id)
@@ -204,14 +229,43 @@ async def check_status(call: types.CallbackQuery):
 @dp.chat_join_request()
 async def join_req(update: types.ChatJoinRequest):
     uid = update.from_user.id
+    auto_collect_user(uid, update.from_user.first_name)
+    
     cursor.execute("UPDATE users SET has_requested = 1 WHERE user_id=?", (uid,))
     conn.commit()
     
     count = get_user_count(uid)
     if count >= REQUIRED_SHARES:
-        await bot.approve_chat_join_request(chat_id=GROUP_ID, user_id=uid)
-    else:
-        await bot.send_message(uid, "VIP Group ဝင်ရန်အတွက် လူ (၁) ယောက် ဖိတ်ခေါ်ပေးရန် လိုအပ်ပါသည်။")
+        try: await bot.approve_chat_join_request(chat_id=GROUP_ID, user_id=uid)
+        except: pass
+
+@dp.message(F.chat.id == GROUP_ID)
+async def handle_group_messages(message: types.Message):
+    if message.from_user and not message.from_user.is_bot:
+        auto_collect_user(message.from_user.id, message.from_user.first_name)
+
+    if message.new_chat_members or message.left_chat_member:
+        if message.new_chat_members:
+            for member in message.new_chat_members:
+                if not member.is_bot:
+                    auto_collect_user(member.id, member.first_name)
+        try: await message.delete()
+        except: pass
+        return
+
+    has_link = False
+    if message.text and (re.search(r"t\.me", message.text, re.IGNORECASE) or message.entities):
+        for entity in message.entities or []:
+            if entity.type in ["url", "text_link"]:
+                has_link = True
+                break
+
+    if has_link:
+        try:
+            member = await bot.get_chat_member(chat_id=GROUP_ID, user_id=message.from_user.id)
+            if member.status not in ["creator", "administrator"]:
+                await message.delete()
+        except: pass
 
 async def on_startup(bot: Bot) -> None:
     await bot.delete_webhook(drop_pending_updates=True)
