@@ -17,7 +17,7 @@ from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_applicati
 BOT_TOKEN = "8962171444:AAGfz63sO6HQwlWms51RbaRE5WlROji6aYk"      
 GROUP_ID = -1003913717685             
 REQUIRED_SHARES = 1                   
-GROUP_REQUEST_LINK = "https://t.me/Myanmar_girls01"
+GROUP_REQUEST_LINK = "https://t.me/+LFpe_NpuiO1mOTA1"
 ADMIN_ID = 5238487314  
 
 WEBHOOK_HOST = "https://Myaibot-production.up.railway.app"
