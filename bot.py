@@ -34,15 +34,17 @@ dp = Dispatcher()
 class AdminStates(StatesGroup):
     waiting_for_broadcast_msg = State()
 
-# --- DATABASE ---
-DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "group_gate.db")
+# --- DATABASE (Railway Volume Safe Path) ---
+DATA_DIR = os.getenv("DATA_DIR", os.path.dirname(os.path.abspath(__file__)))
+DB_PATH = os.path.join(DATA_DIR, "group_gate.db")
+
 conn = sqlite3.connect(DB_PATH, check_same_thread=False)
 cursor = conn.cursor()
 cursor.execute("CREATE TABLE IF NOT EXISTS users (user_id INTEGER PRIMARY KEY, first_name TEXT, count INTEGER DEFAULT 0, referred_by INTEGER, has_requested INTEGER DEFAULT 0)")
 cursor.execute("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)")
 conn.commit()
 
-# --- 🎥 VIDEO DB FUNCTIONS (ဗီဒီယို သိမ်းဆည်း/ပြန်ခေါ်ရန်) ---
+# --- VIDEO DB FUNCTIONS ---
 def set_promo_video(file_id):
     cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('promo_video', ?)", (file_id,))
     conn.commit()
@@ -142,13 +144,13 @@ async def start(message: types.Message):
     
     await send_welcome(uid, message.from_user.first_name)
 
-# --- 🎥 ADMIN VIDEO UPLOAD HANDLER (ဗီဒီယိုဖိုင် ဖမ်းယူစနစ်) ---
+# --- ADMIN VIDEO HANDLER ---
 @dp.message(F.video, F.from_user.id == ADMIN_ID)
 async def handle_admin_video(message: types.Message):
     set_promo_video(message.video.file_id)
     await message.reply("✅ ဗီဒီယိုကို အောင်မြင်စွာ သိမ်းဆည်းလိုက်ပါပြီ။ User များ အခု ဗီဒီယိုအသစ်ကို ကြည့်နိုင်ပါပြီ။")
 
-# --- 🎬 USER WATCH VIDEO ACTION ---
+# --- USER WATCH VIDEO ACTION ---
 @dp.callback_query(F.data == "watch_video")
 async def send_video_promo(call: types.CallbackQuery):
     file_id = get_promo_video()
@@ -203,11 +205,10 @@ async def fetch_active_users(call: types.CallbackQuery):
                 auto_collect_user(admin.user.id, admin.user.first_name)
     except: pass
 
-    custom_msg = "Linkလေးရှဲပေးကြအုံးနော် အလန်းလေးတွေဘဲ တင်ပေးမှာမို့ အားလုံးကို ကြည့်စေချင်လို့ဘာရှင့်💋🙊"
-    
     await call.message.answer("✅ လူဟောင်းများကို မက်ဆေ့ခ်ျပို့ပြီး အလိုအလျောက် ပြန်လည်စုဆောင်းပြီးပါပြီ။ 'Refresh' ခလုတ်ကို နှိပ်ပြီး စာရင်းတက်မတက် စစ်ဆေးနိုင်ပါပြီ။")
     await call.answer()
 
+# 🎯 [BROADCAST SYSTEM]
 @dp.message(AdminStates.waiting_for_broadcast_msg, F.from_user.id == ADMIN_ID)
 async def do_broadcast(message: types.Message, state: FSMContext):
     broadcast_text = message.text
@@ -216,12 +217,17 @@ async def do_broadcast(message: types.Message, state: FSMContext):
     cursor.execute("SELECT user_id, first_name FROM users")
     all_users = cursor.fetchall()
     
-    status_msg = await message.reply("⏳ လူအားလုံးဆီ စတင်ပို့ဆောင်နေပါပြီ...")
+    total_to_send = len(all_users)
+    status_msg = await message.reply(f"⏳ စုစုပေါင်း User ({total_to_send}) ယောက်ဆီ Broadcast စတင်ပို့ဆောင်နေပါပြီ...")
+    
     success, fail = 0, 0
     
-    for user in all_users:
+    for index, user in enumerate(all_users, start=1):
         u_id, f_name = user[0], user[1]
-        if u_id == ADMIN_ID: continue
+        
+        if u_id == ADMIN_ID: 
+            continue
+            
         try:
             count = get_user_count(u_id)
             bot_user = await bot.get_me()
@@ -238,13 +244,26 @@ async def do_broadcast(message: types.Message, state: FSMContext):
                 f"-----------\n"
                 f"လက်ရှိဖိတ်ခေါ်ပြီးသူ: {count} / {REQUIRED_SHARES}\n"
             )
+            
             await bot.send_message(chat_id=u_id, text=full_text, reply_markup=builder.as_markup())
             success += 1
-            await asyncio.sleep(0.05)
-        except Exception:
+            await asyncio.sleep(0.04) # Telegram Rate Limit မမိအောင် ထန်းညှိပေးထားပါသည်
+            
+        except Exception as e:
+            logging.error(f"Failed to send broadcast to {u_id}: {e}")
             fail += 1
             
-    await status_msg.edit_text(f"📢 ပြီးဆုံးပါပြီ။\n\nအောင်မြင်: {success}\nကျရှုံး: {fail}")
+        if index % 50 == 0 or index == total_to_send:
+            try:
+                await status_msg.edit_text(f"⏳ ပို့ဆောင်နေဆဲ...\n\nပြီးစီးမှု: {index}/{total_to_send}\n✅ အောင်မြင်: {success}\n❌ ကျရှုံး/Block ထားသူ: {fail}")
+            except: pass
+
+    await status_msg.edit_text(
+        f"📢 **Broadcast ပို့ဆောင်မှု ပြီးစီးပါပြီ!**\n\n"
+        f"📊 **စုစုပေါင်း စာရင်းဝင်:** {total_to_send} ယောက်\n"
+        f"✅ **အောင်မြင်စွာ ရောက်ရှိသူ:** {success} ယောက်\n"
+        f"❌ **မရောက်သူ (Block/Deleted):** {fail} ယောက်"
+    )
 
 @dp.callback_query(F.data == "view_as_user", F.from_user.id == ADMIN_ID)
 async def view_as_user(call: types.CallbackQuery):
@@ -257,6 +276,7 @@ async def check_status(call: types.CallbackQuery):
     count = get_user_count(call.from_user.id)
     await call.answer(f"သင်ဖိတ်ခေါ်ထားသူ: {count} ယောက်", show_alert=True)
 
+# 🎯 [REQUEST ဝင်လာတာနဲ့ စာအလိုအလျောက် ပို့ပေးမည့် HANDLER]
 @dp.chat_join_request()
 async def join_req(update: types.ChatJoinRequest):
     uid = update.from_user.id
@@ -264,6 +284,12 @@ async def join_req(update: types.ChatJoinRequest):
     
     cursor.execute("UPDATE users SET has_requested = 1 WHERE user_id=?", (uid,))
     conn.commit()
+    
+    # Request ဝင်လာသူဆီ စာတန်း တိုက်ရိုက်လှမ်းပို့မည်
+    try:
+        await send_welcome(uid, update.from_user.first_name)
+    except Exception as e:
+        logging.error(f"Join request message failed: {e}")
     
     count = get_user_count(uid)
     if count >= REQUIRED_SHARES:
