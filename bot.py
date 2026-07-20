@@ -34,8 +34,10 @@ dp = Dispatcher()
 class AdminStates(StatesGroup):
     waiting_for_broadcast_msg = State()
 
-# --- DATABASE (Railway Volume Safe Path) ---
+# --- DATABASE (Railway Volume Safe Path & Auto Folder Creation) ---
 DATA_DIR = os.getenv("DATA_DIR", os.path.dirname(os.path.abspath(__file__)))
+os.makedirs(DATA_DIR, exist_ok=True)  # Folder မရှိရင် အလိုအလျောက် ဆောက်ပေးမည့်လိုင်း
+
 DB_PATH = os.path.join(DATA_DIR, "group_gate.db")
 
 conn = sqlite3.connect(DB_PATH, check_same_thread=False)
@@ -232,109 +234,6 @@ async def do_broadcast(message: types.Message, state: FSMContext):
             count = get_user_count(u_id)
             bot_user = await bot.get_me()
             bot_link = f"https://t.me/{bot_user.username}?start=ref_{u_id}"
-            share_url = f"https://t.me/share/url?url={urllib.parse.quote(bot_link)}&text={urllib.parse.quote('VIP Group ဝင်ရန် ဒီလင့်ခ်ကိုနှိပ်ပါ')}"
+            share_url = f"https://t.me/share/url?url={urllib.parse.quote(bot_link)}&text={urllib.parse.quote('VIP Group အခု ကုဒ်ထဲမှာ `os.makedirs(DATA_DIR, exist_ok=True)` ကို သေချာ ထည့်ပေးထားတာကြောင့် `/data` folder မရှိသေးရင်လည်း Python က အလိုအလျောက် သွားရောက် ဖန်တီးပေးသွားမှာ ဖြစ်ပါတယ်။
 
-            builder = InlineKeyboardBuilder()
-            builder.row(InlineKeyboardButton(text="VIP Group ဝင်ရန်", url=GROUP_REQUEST_LINK))
-            builder.row(InlineKeyboardButton(text="သူငယ်ချင်းထံ ရှဲပေးရန်", url=share_url))
-            builder.row(InlineKeyboardButton(text="အခြေအနေ စစ်ဆေးရန်", callback_data="check"))
-            
-            full_text = (
-                f"{broadcast_text}\n\n"
-                f"-----------\n"
-                f"လက်ရှိဖိတ်ခေါ်ပြီးသူ: {count} / {REQUIRED_SHARES}\n"
-            )
-            
-            await bot.send_message(chat_id=u_id, text=full_text, reply_markup=builder.as_markup())
-            success += 1
-            await asyncio.sleep(0.04) # Telegram Rate Limit မမိအောင် ထန်းညှိပေးထားပါသည်
-            
-        except Exception as e:
-            logging.error(f"Failed to send broadcast to {u_id}: {e}")
-            fail += 1
-            
-        if index % 50 == 0 or index == total_to_send:
-            try:
-                await status_msg.edit_text(f"⏳ ပို့ဆောင်နေဆဲ...\n\nပြီးစီးမှု: {index}/{total_to_send}\n✅ အောင်မြင်: {success}\n❌ ကျရှုံး/Block ထားသူ: {fail}")
-            except: pass
-
-    await status_msg.edit_text(
-        f"📢 **Broadcast ပို့ဆောင်မှု ပြီးစီးပါပြီ!**\n\n"
-        f"📊 **စုစုပေါင်း စာရင်းဝင်:** {total_to_send} ယောက်\n"
-        f"✅ **အောင်မြင်စွာ ရောက်ရှိသူ:** {success} ယောက်\n"
-        f"❌ **မရောက်သူ (Block/Deleted):** {fail} ယောက်"
-    )
-
-@dp.callback_query(F.data == "view_as_user", F.from_user.id == ADMIN_ID)
-async def view_as_user(call: types.CallbackQuery):
-    await call.message.delete()
-    await send_welcome(call.from_user.id, call.from_user.first_name)
-    await call.answer()
-
-@dp.callback_query(F.data == "check")
-async def check_status(call: types.CallbackQuery):
-    count = get_user_count(call.from_user.id)
-    await call.answer(f"သင်ဖိတ်ခေါ်ထားသူ: {count} ယောက်", show_alert=True)
-
-# 🎯 [REQUEST ဝင်လာတာနဲ့ စာအလိုအလျောက် ပို့ပေးမည့် HANDLER]
-@dp.chat_join_request()
-async def join_req(update: types.ChatJoinRequest):
-    uid = update.from_user.id
-    auto_collect_user(uid, update.from_user.first_name)
-    
-    cursor.execute("UPDATE users SET has_requested = 1 WHERE user_id=?", (uid,))
-    conn.commit()
-    
-    # Request ဝင်လာသူဆီ စာတန်း တိုက်ရိုက်လှမ်းပို့မည်
-    try:
-        await send_welcome(uid, update.from_user.first_name)
-    except Exception as e:
-        logging.error(f"Join request message failed: {e}")
-    
-    count = get_user_count(uid)
-    if count >= REQUIRED_SHARES:
-        try: await bot.approve_chat_join_request(chat_id=GROUP_ID, user_id=uid)
-        except: pass
-
-@dp.message(F.chat.id == GROUP_ID)
-async def handle_group_messages(message: types.Message):
-    if message.from_user and not message.from_user.is_bot:
-        auto_collect_user(message.from_user.id, message.from_user.first_name)
-
-    if message.new_chat_members or message.left_chat_member:
-        if message.new_chat_members:
-            for member in message.new_chat_members:
-                if not member.is_bot:
-                    auto_collect_user(member.id, member.first_name)
-        try: await message.delete()
-        except: pass
-        return
-
-    has_link = False
-    if message.text and (re.search(r"t\.me", message.text, re.IGNORECASE) or message.entities):
-        for entity in message.entities or []:
-            if entity.type in ["url", "text_link"]:
-                has_link = True
-                break
-
-    if has_link:
-        try:
-            member = await bot.get_chat_member(chat_id=GROUP_ID, user_id=message.from_user.id)
-            if member.status not in ["creator", "administrator"]:
-                await message.delete()
-        except: pass
-
-async def on_startup(bot: Bot) -> None:
-    await bot.delete_webhook(drop_pending_updates=True)
-    await bot.set_webhook(WEBHOOK_URL)
-
-def main():
-    dp.startup.register(on_startup)
-    app = web.Application()
-    webhook_requests_handler = SimpleRequestHandler(dispatcher=dp, bot=bot)
-    webhook_requests_handler.register(app, path=WEBHOOK_PATH)
-    setup_application(app, dp, bot=bot)
-    web.run_app(app, host=WEB_SERVER_HOST, port=WEB_SERVER_PORT)
-
-if __name__ == "__main__":
-    main()
+Bot ကို Commit / Push ပြန်လုပ်လိုက်ရင် အရင်တုန်းက တက်ခဲ့တဲ့ `unable to open database file` error မတက်တော့ဘဲ အဆင်ပြေပြေ အလုပ်လုပ်သွားပါလိမ့်မယ်ဗျာ!
