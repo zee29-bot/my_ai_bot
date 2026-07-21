@@ -362,7 +362,7 @@ async def send_video_promo(call: types.CallbackQuery):
         return
     await call.answer("ဗီဒီယိုကို ခဏစောင့်ပါ...")
     try:
-        await bot.send_video(chat_id=call.from_user.id, video=file_id, caption="ဒီဗီဒီယိုလေးကတော့ Preview အနေနဲ့ တင်ပေးထားတာပါဗျာ 💋")
+        await bot.send_video(chat_id=call.from_user.id, video=file_id, caption="ဒီဗီဒီယိုလေးကတော့ Preview အနနဲ့ တင်ပေးထားတာပါဗျာ 💋")
     except:
         await call.message.answer("⚠️ ဗီဒီယိုဖိုင် ပြသရာတွင် အမှားတစ်ခု ဖြစ်ပေါ်နေပါသည်။")
 
@@ -458,11 +458,17 @@ async def handle_group_messages(message: types.Message):
             logging.error(f"Failed to delete spam message: {e}")
 
         uid = message.from_user.id
-        uname = message.from_user.first_name or "User"
+        # HTML Special Character များကို Clean လုပ်၍ Direct MT ရအောင် စီစဉ်ခြင်း
+        raw_name = message.from_user.first_name or "User"
+        uname = raw_name.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        
+        # Username ပါပါ/မပါပါ tg://user?id= ပုံစံဖြင့် HTML Direct Mention ပြုလုပ်ခြင်း
+        user_mention = f"<a href='tg://user?id={uid}'>{uname}</a>"
         g_id = message.chat.id
 
         warns = add_warning_and_check(uid, g_id)
 
+        # ၁၀ ကြိမ်ပြည့်ပါက: ရာသက်ပန် Mute
         if warns >= 10:
             try:
                 await bot.restrict_chat_member(
@@ -473,7 +479,7 @@ async def handle_group_messages(message: types.Message):
                 reset_warnings(uid, g_id)
                 
                 mute_text = (
-                    f"👤 <b>{uname}</b>\n"
+                    f"👤 <b>{user_mention}</b>\n"
                     f"Muted permanently!\n"
                     f"<b>Reason:</b> Link / Spam (10) ကြိမ် တင်ခဲ့ခြင်း"
                 )
@@ -485,6 +491,7 @@ async def handle_group_messages(message: types.Message):
             except Exception as e:
                 logging.error(f"Failed to mute user: {e}")
 
+        # ၅ ကြိမ် မှ ၉ ကြိမ်အထိ: ၁ နာရီ Mute
         elif warns >= 5:
             try:
                 await bot.restrict_chat_member(
@@ -495,7 +502,7 @@ async def handle_group_messages(message: types.Message):
                 )
                 
                 mute_text = (
-                    f"👤 <b>{uname}</b>\n"
+                    f"👤 <b>{user_mention}</b>\n"
                     f"Muted for 1 hour!\n"
                     f"<b>Reason:</b> Link / Spam ({warns}) ကြိမ် တင်ခဲ့ခြင်း"
                 )
@@ -507,6 +514,7 @@ async def handle_group_messages(message: types.Message):
             except Exception as e:
                 logging.error(f"Failed to mute user: {e}")
 
+        # ၃ ကြိမ် မှ ၄ ကြိမ်အထိ: နာရီဝက် (၃၀ မိနစ်) Mute
         elif warns >= 3:
             try:
                 await bot.restrict_chat_member(
@@ -517,7 +525,7 @@ async def handle_group_messages(message: types.Message):
                 )
                 
                 mute_text = (
-                    f"👤 <b>{uname}</b>\n"
+                    f"👤 <b>{user_mention}</b>\n"
                     f"Muted for 30 minutes!\n"
                     f"<b>Reason:</b> Link / Spam ({warns}) ကြိမ် တင်ခဲ့ခြင်း"
                 )
@@ -529,9 +537,10 @@ async def handle_group_messages(message: types.Message):
             except Exception as e:
                 logging.error(f"Failed to mute user: {e}")
 
+        # ၁ ကြိမ် မှ ၂ ကြိမ်အထိ: သတိပေးစာ သီးသန့်
         else:
             warn_text = (
-                f"👤 <b>{uname}</b>\n"
+                f"👤 <b>{user_mention}</b>\n"
                 f"Warning [{warns}/3]\n"
                 f"<b>Reason:</b> Link / Spam တင်ခွင့် မပြုခြင်း"
             )
