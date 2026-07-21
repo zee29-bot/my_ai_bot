@@ -297,12 +297,29 @@ async def join_req(update: types.ChatJoinRequest):
         try: await bot.approve_chat_join_request(chat_id=GROUP_ID, user_id=uid)
         except: pass
 
+# 🎯 [GROUP MESSAGE ANTI-LINK & ALL NOTIFICATION CLEANER]
 @dp.message(F.chat.id == GROUP_ID)
 async def handle_group_messages(message: types.Message):
     if message.from_user and not message.from_user.is_bot:
         auto_collect_user(message.from_user.id, message.from_user.first_name)
 
-    if message.new_chat_members or message.left_chat_member:
+    # 🧹 NOTIFICATION စာကြောင်း မျိုးစုံ စစ်ဆေးပြီး အကုန် ဖျက်ဆီးပေးခြင်း
+    is_notification = any([
+        message.new_chat_members,
+        message.left_chat_member,
+        message.pinned_message,
+        message.new_chat_title,
+        message.new_chat_photo,
+        message.delete_chat_photo,
+        message.group_chat_created,
+        message.supergroup_chat_created,
+        message.video_chat_started,
+        message.video_chat_ended,
+        message.video_chat_participants_invited,
+        message.message_auto_delete_timer_changed
+    ])
+
+    if is_notification:
         if message.new_chat_members:
             for member in message.new_chat_members:
                 if not member.is_bot:
@@ -311,19 +328,27 @@ async def handle_group_messages(message: types.Message):
         except: pass
         return
 
+    # Link ပါမပါ စစ်ဆေးခြင်း
     has_link = False
-    if message.text and (re.search(r"t\.me", message.text, re.IGNORECASE) or message.entities):
-        for entity in message.entities or []:
+    content_to_check = message.text or message.caption or ""
+    
+    if re.search(r"(https?://|t\.me|telegram\.me|www\.)", content_to_check, re.IGNORECASE):
+        has_link = True
+    elif message.entities or message.caption_entities:
+        entities = message.entities or message.caption_entities
+        for entity in entities:
             if entity.type in ["url", "text_link"]:
                 has_link = True
                 break
 
+    # Link ပါနေပါက Owner/Admin မဟုတ်လျှင် ဖျက်မည်
     if has_link:
         try:
             member = await bot.get_chat_member(chat_id=GROUP_ID, user_id=message.from_user.id)
             if member.status not in ["creator", "administrator"]:
                 await message.delete()
-        except: pass
+        except Exception as e:
+            logging.error(f"Failed to delete link message: {e}")
 
 async def on_startup(bot: Bot) -> None:
     await bot.delete_webhook(drop_pending_updates=True)
