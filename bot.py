@@ -4,9 +4,10 @@ import os
 import urllib.parse
 import asyncio
 import re
+from datetime import timedelta
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
-from aiogram.types import InlineKeyboardButton
+from aiogram.types import InlineKeyboardButton, ChatPermissions
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
@@ -35,17 +36,26 @@ class AdminStates(StatesGroup):
     waiting_for_broadcast_msg = State()
     waiting_for_group_broadcast_msg = State()
 
-# --- DATABASE (Auto Locate group_gate.db) ---
-DATA_DIR = os.getenv("DATA_DIR", "/app/data")
+# --- PERMANENT DATABASE LOCATION ---
+DATA_DIR = os.getenv("DATA_DIR", "/data")
 os.makedirs(DATA_DIR, exist_ok=True)
 
 DB_PATH = os.path.join(DATA_DIR, "group_gate.db")
+
+OLD_DB_PATH = "group_gate.db"
+if os.path.exists(OLD_DB_PATH) and not os.path.exists(DB_PATH):
+    try:
+        os.rename(OLD_DB_PATH, DB_PATH)
+        logging.info("Moved old DB to persistent volume path.")
+    except Exception as e:
+        logging.error(f"Failed to move old DB: {e}")
 
 conn = sqlite3.connect(DB_PATH, check_same_thread=False)
 cursor = conn.cursor()
 cursor.execute("CREATE TABLE IF NOT EXISTS users (user_id INTEGER PRIMARY KEY, first_name TEXT, count INTEGER DEFAULT 0, referred_by INTEGER, has_requested INTEGER DEFAULT 0)")
 cursor.execute("CREATE TABLE IF NOT EXISTS groups (group_id INTEGER PRIMARY KEY, group_title TEXT)")
 cursor.execute("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)")
+cursor.execute("CREATE TABLE IF NOT EXISTS warnings (user_id INTEGER, group_id INTEGER, warn_count INTEGER DEFAULT 0, PRIMARY KEY(user_id, group_id))")
 conn.commit()
 
 # --- DB FUNCTIONS ---
@@ -86,6 +96,23 @@ def auto_collect_user(uid, fname):
     except Exception as e:
         logging.error(f"Database error in auto_collect: {e}")
 
+# --- WARNING & MUTE LOGIC ---
+def add_warning_and_check(uid, g_id):
+    cursor.execute("SELECT warn_count FROM warnings WHERE user_id=? AND group_id=?", (uid, g_id))
+    res = cursor.fetchone()
+    if res is None:
+        current_warns = 1
+        cursor.execute("INSERT INTO warnings (user_id, group_id, warn_count) VALUES (?, ?, ?)", (uid, g_id, current_warns))
+    else:
+        current_warns = res[0] + 1
+        cursor.execute("UPDATE warnings SET warn_count=? WHERE user_id=? AND group_id=?", (current_warns, uid, g_id))
+    conn.commit()
+    return current_warns
+
+def reset_warnings(uid, g_id):
+    cursor.execute("DELETE FROM warnings WHERE user_id=? AND group_id=?", (uid, g_id))
+    conn.commit()
+
 # --- UI FOR USER ---
 async def send_welcome(uid, fname):
     count = get_user_count(uid)
@@ -111,9 +138,9 @@ async def send_welcome(uid, fname):
         f"⚡️ [သူငယ်ချင်း ၁ ယောက် ဝင်လာတာနဲ့ VIP Group ထဲ အလိုအလျောက် တန်းထည့်ပေးမှာ ဖြစ်ပါတယ်။]\n\n"
         f"----------------------------------\n"
         f"🤖 **Bot ကို မိမိ Group ထဲ ထည့်သွင်းပါက ရရှိမည့် အကျိုးကျေးဇူးများ:**\n\n"
-        f"🛡️ **Anti-Link စနစ်:** Group ထဲသို့ မလိုအပ်သော Spam Link / Telegram Link များ တင်ပါက အလိုအလျောက် ရှာဖွေ ဖျက်ဆီးပေးပါသည်။\n"
-        f"🧹 **Clean-Up စနစ်:** Member အသစ်ဝင်/ထွက် Noti စာကြောင်းများနှင့် မလိုအပ်သော Notification များကို သန့်ရှင်းပေးပါသည်။\n"
-        f"👑 **Admin Security:** Group Owner နှင့် Admin များ၏ Link များကိုမူ ဖျက်မည်မဟုတ်ဘဲ ကင်းလွတ်ခွင့် ပေးထားပါသည်။\n\n"
+        f"🛡️ **Anti-Link & Anti-Spam စနစ်:** Link / Spam များ တင်ပါက ၃ ကြိမ်မြောက် မိနစ် ၃၀၊ ၅ ကြိမ်မြောက် ၁ နာရီ၊ ၁၀ ကြိမ်မြောက် ရာသက်ပန် Mute ပေးပါသည်။\n"
+        f"🧹 **Clean-Up စနစ်:** Member အသစ်ဝင်/ထွက် Noti စာကြောင်းများကို သန့်ရှင်းပေးပါသည်။\n"
+        f"👑 **Admin Security:** Group Owner နှင့် Admin များကို ကင်းလွတ်ခွင့် ပေးထားပါသည်။\n\n"
         f"👉 မိမိ Group ထဲသို့ Bot ကို ထည့်သွင်းရန် အောက်ပါ **'➕ Bot ကို မိမိ Group ထဲထည့်ရန်'** ခလုတ်ကို နှိပ်ပါဗျာ။"
     )
     await bot.send_message(chat_id=uid, text=text, reply_markup=builder.as_markup())
@@ -135,6 +162,7 @@ async def start(message: types.Message):
         builder.row(InlineKeyboardButton(text="📢 Group အားလုံးဆီ ကြော်ငြာ စာပို့ရန်", callback_data="admin_group_broadcast"))
         builder.row(InlineKeyboardButton(text="🔄 အချက်အလက်များ Refresh လုပ်ရန်", callback_data="admin_refresh"))
         builder.row(InlineKeyboardButton(text="⚡️ လူဟောင်းများစာရင်း အကုန်ပြန်ယူရန်", callback_data="admin_fetch_users"))
+        builder.row(InlineKeyboardButton(text="⚡️ Group စာရင်း အကုန်ပြန်ယူရန်", callback_data="admin_fetch_groups"))
         builder.row(InlineKeyboardButton(text="👤 User Interface အတိုင်းကြည့်ရန်", callback_data="view_as_user"))
         
         admin_text = (
@@ -168,10 +196,10 @@ async def start(message: types.Message):
     
     await send_welcome(uid, message.from_user.first_name)
 
-# --- ADMIN BUTTON: FETCH USERS (DB ထဲမှ စာရင်းအပြည့်အစုံ ဆွဲထုတ်ခြင်း) ---
+# --- ADMIN BUTTON: FETCH USERS ---
 @dp.callback_query(F.data == "admin_fetch_users", F.from_user.id == ADMIN_ID)
 async def fetch_old_users(call: types.CallbackQuery):
-    await call.answer("စာရင်းများ ဆွဲထုတ်နေပါသည်...", show_alert=False)
+    await call.answer("User စာရင်းများ ဆွဲထုတ်နေပါသည်...", show_alert=False)
     cursor.execute("SELECT user_id, first_name, count FROM users")
     all_users = cursor.fetchall()
     
@@ -184,7 +212,6 @@ async def fetch_old_users(call: types.CallbackQuery):
         u_id, fname, count = u[0], u[1] if u[1] else "No Name", u[2]
         user_list_text += f"{idx}. Name: {fname} | ID: `{u_id}` | Invited: {count}\n"
 
-    # စာရင်း အလွန်ရှည်ပါက TXT File အဖြစ် ပို့ပေးမည်
     if len(user_list_text) > 4000:
         file_path = "user_list.txt"
         with open(file_path, "w", encoding="utf-8") as f:
@@ -195,6 +222,33 @@ async def fetch_old_users(call: types.CallbackQuery):
         os.remove(file_path)
     else:
         await call.message.answer(user_list_text, parse_mode="Markdown")
+
+# --- ADMIN BUTTON: FETCH GROUPS ---
+@dp.callback_query(F.data == "admin_fetch_groups", F.from_user.id == ADMIN_ID)
+async def fetch_groups(call: types.CallbackQuery):
+    await call.answer("Group စာရင်းများ ဆွဲထုတ်နေပါသည်...", show_alert=False)
+    cursor.execute("SELECT group_id, group_title FROM groups")
+    all_groups = cursor.fetchall()
+    
+    if not all_groups:
+        await call.message.answer("⚠️ မည်သည့် Group စာရင်းမှ မရှိသေးပါ။")
+        return
+
+    group_list_text = f"📊 စုစုပေါင်း Bot ရောက်ရှိနေသော Group စာရင်း ({len(all_groups)} ခု)\n\n"
+    for idx, g in enumerate(all_groups, start=1):
+        g_id, title = g[0], g[1] if g[1] else "No Title"
+        group_list_text += f"{idx}. Title: {title} | Group ID: `{g_id}`\n"
+
+    if len(group_list_text) > 4000:
+        file_path = "group_list.txt"
+        with open(file_path, "w", encoding="utf-8") as f:
+            f.write(group_list_text)
+        
+        doc = types.FSInputFile(file_path)
+        await call.message.answer_document(doc, caption="📄 Group စာရင်းအပြည့်အစုံ ဖိုင်ဖြစ်ပါတယ်။")
+        os.remove(file_path)
+    else:
+        await call.message.answer(group_list_text, parse_mode="Markdown")
 
 # --- BROADCAST TO USER SYSTEM ---
 @dp.callback_query(F.data == "admin_broadcast", F.from_user.id == ADMIN_ID)
@@ -286,6 +340,7 @@ async def refresh_admin_stats(call: types.CallbackQuery):
     builder.row(InlineKeyboardButton(text="📢 Group အားလုံးဆီ ကြော်ငြာ စာပို့ရန်", callback_data="admin_group_broadcast"))
     builder.row(InlineKeyboardButton(text="🔄 အချက်အလက်များ Refresh လုပ်ရန်", callback_data="admin_refresh"))
     builder.row(InlineKeyboardButton(text="⚡️ လူဟောင်းများစာရင်း အကုန်ပြန်ယူရန်", callback_data="admin_fetch_users"))
+    builder.row(InlineKeyboardButton(text="⚡️ Group စာရင်း အကုန်ပြန်ယူရန်", callback_data="admin_fetch_groups"))
     builder.row(InlineKeyboardButton(text="👤 User Interface အတိုင်းကြည့်ရန်", callback_data="view_as_user"))
     
     admin_text = (
@@ -353,12 +408,14 @@ async def bot_added_to_group(event: types.ChatMemberUpdated):
                 )
             except: pass
 
+# --- GROUP MESSAGES & ANTI-SPAM / WARNING & AUTO-MUTE ---
 @dp.message(F.chat.type.in_({"group", "supergroup"}))
 async def handle_group_messages(message: types.Message):
     save_group(message.chat.id, message.chat.title)
     if message.from_user and not message.from_user.is_bot:
         auto_collect_user(message.from_user.id, message.from_user.first_name)
 
+    # ၁။ NOTIFICATION စာကြောင်းများ အလိုအလျောက်ဖျက်ခြင်း
     is_notification = any([
         message.new_chat_members, message.left_chat_member, message.pinned_message,
         message.new_chat_title, message.new_chat_photo, message.delete_chat_photo,
@@ -371,25 +428,120 @@ async def handle_group_messages(message: types.Message):
         except: pass
         return
 
-    if message.chat.id == MAIN_GROUP_ID:
-        has_link = False
+    # ၂။ ADMIN မဟုတ်သူများ၏ LINK / INLINE BUTTONS SPAM စစ်ဆေးခြင်း
+    try:
+        member = await bot.get_chat_member(chat_id=message.chat.id, user_id=message.from_user.id)
+        if member.status in ["creator", "administrator"]:
+            return
+    except Exception as e:
+        logging.error(f"Failed to fetch chat member status: {e}")
+
+    should_delete = False
+
+    if message.reply_markup and message.reply_markup.inline_keyboard:
+        should_delete = True
+    else:
         content_to_check = message.text or message.caption or ""
-        if re.search(r"(https?://|t\.me|telegram\.me|www\.)", content_to_check, re.IGNORECASE):
-            has_link = True
+        if re.search(r"(https?://|t\.me|telegram\.me|www\.|@[a-zA-Z0-9_]+)", content_to_check, re.IGNORECASE):
+            should_delete = True
         elif message.entities or message.caption_entities:
             entities = message.entities or message.caption_entities
             for entity in entities:
-                if entity.type in ["url", "text_link"]:
-                    has_link = True
+                if entity.type in ["url", "text_link", "mention"]:
+                    should_delete = True
                     break
 
-        if has_link:
+    if should_delete:
+        try:
+            await message.delete()
+        except Exception as e:
+            logging.error(f"Failed to delete spam message: {e}")
+
+        uid = message.from_user.id
+        uname = message.from_user.first_name or "User"
+        g_id = message.chat.id
+
+        warns = add_warning_and_check(uid, g_id)
+
+        if warns >= 10:
             try:
-                member = await bot.get_chat_member(chat_id=MAIN_GROUP_ID, user_id=message.from_user.id)
-                if member.status not in ["creator", "administrator"]:
-                    await message.delete()
+                await bot.restrict_chat_member(
+                    chat_id=g_id,
+                    user_id=uid,
+                    permissions=ChatPermissions(can_send_messages=False)
+                )
+                reset_warnings(uid, g_id)
+                
+                mute_text = (
+                    f"👤 <b>{uname}</b>\n"
+                    f"Muted permanently!\n"
+                    f"<b>Reason:</b> Link / Spam (10) ကြိမ် တင်ခဲ့ခြင်း"
+                )
+                
+                mute_msg = await message.answer(mute_text, parse_mode="HTML")
+                await asyncio.sleep(5)
+                try: await mute_msg.delete()
+                except: pass
             except Exception as e:
-                logging.error(f"Failed to delete link: {e}")
+                logging.error(f"Failed to mute user: {e}")
+
+        elif warns >= 5:
+            try:
+                await bot.restrict_chat_member(
+                    chat_id=g_id,
+                    user_id=uid,
+                    permissions=ChatPermissions(can_send_messages=False),
+                    until_date=timedelta(hours=1)
+                )
+                
+                mute_text = (
+                    f"👤 <b>{uname}</b>\n"
+                    f"Muted for 1 hour!\n"
+                    f"<b>Reason:</b> Link / Spam ({warns}) ကြိမ် တင်ခဲ့ခြင်း"
+                )
+                
+                mute_msg = await message.answer(mute_text, parse_mode="HTML")
+                await asyncio.sleep(5)
+                try: await mute_msg.delete()
+                except: pass
+            except Exception as e:
+                logging.error(f"Failed to mute user: {e}")
+
+        elif warns >= 3:
+            try:
+                await bot.restrict_chat_member(
+                    chat_id=g_id,
+                    user_id=uid,
+                    permissions=ChatPermissions(can_send_messages=False),
+                    until_date=timedelta(minutes=30)
+                )
+                
+                mute_text = (
+                    f"👤 <b>{uname}</b>\n"
+                    f"Muted for 30 minutes!\n"
+                    f"<b>Reason:</b> Link / Spam ({warns}) ကြိမ် တင်ခဲ့ခြင်း"
+                )
+                
+                mute_msg = await message.answer(mute_text, parse_mode="HTML")
+                await asyncio.sleep(5)
+                try: await mute_msg.delete()
+                except: pass
+            except Exception as e:
+                logging.error(f"Failed to mute user: {e}")
+
+        else:
+            warn_text = (
+                f"👤 <b>{uname}</b>\n"
+                f"Warning [{warns}/3]\n"
+                f"<b>Reason:</b> Link / Spam တင်ခွင့် မပြုခြင်း"
+            )
+            
+            warn_msg = await message.answer(warn_text, parse_mode="HTML")
+            await asyncio.sleep(5)
+            try:
+                await warn_msg.delete()
+            except Exception as e:
+                logging.error(f"Failed to delete warning message: {e}")
 
 # --- WEBHOOK & STARTUP ---
 async def on_startup(bot: Bot) -> None:
