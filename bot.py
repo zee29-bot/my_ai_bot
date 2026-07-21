@@ -35,7 +35,7 @@ class AdminStates(StatesGroup):
     waiting_for_broadcast_msg = State()
     waiting_for_group_broadcast_msg = State()
 
-# --- DATABASE ---
+# --- DATABASE (Auto Locate group_gate.db) ---
 DATA_DIR = os.getenv("DATA_DIR", "/app/data")
 os.makedirs(DATA_DIR, exist_ok=True)
 
@@ -168,11 +168,33 @@ async def start(message: types.Message):
     
     await send_welcome(uid, message.from_user.first_name)
 
-# --- ADMIN BUTTON: FETCH USERS ---
+# --- ADMIN BUTTON: FETCH USERS (DB ထဲမှ စာရင်းအပြည့်အစုံ ဆွဲထုတ်ခြင်း) ---
 @dp.callback_query(F.data == "admin_fetch_users", F.from_user.id == ADMIN_ID)
 async def fetch_old_users(call: types.CallbackQuery):
-    total_users, total_completed, total_groups = get_admin_stats()
-    await call.answer(f"⚡️ အချက်အလက်များ အကုန်အစင် ဆွဲထုတ်ပြီးပါပြီ။ (Total Users: {total_users})", show_alert=True)
+    await call.answer("စာရင်းများ ဆွဲထုတ်နေပါသည်...", show_alert=False)
+    cursor.execute("SELECT user_id, first_name, count FROM users")
+    all_users = cursor.fetchall()
+    
+    if not all_users:
+        await call.message.answer("⚠️ မည်သည့် User စာရင်းမှ မရှိသေးပါ။")
+        return
+
+    user_list_text = f"📊 စုစုပေါင်း သုံးစွဲသူစာရင်း ({len(all_users)} ယောက်)\n\n"
+    for idx, u in enumerate(all_users, start=1):
+        u_id, fname, count = u[0], u[1] if u[1] else "No Name", u[2]
+        user_list_text += f"{idx}. Name: {fname} | ID: `{u_id}` | Invited: {count}\n"
+
+    # စာရင်း အလွန်ရှည်ပါက TXT File အဖြစ် ပို့ပေးမည်
+    if len(user_list_text) > 4000:
+        file_path = "user_list.txt"
+        with open(file_path, "w", encoding="utf-8") as f:
+            f.write(user_list_text)
+        
+        doc = types.FSInputFile(file_path)
+        await call.message.answer_document(doc, caption="📄 User စာရင်းအပြည့်အစုံ ဖိုင်ဖြစ်ပါတယ်။")
+        os.remove(file_path)
+    else:
+        await call.message.answer(user_list_text, parse_mode="Markdown")
 
 # --- BROADCAST TO USER SYSTEM ---
 @dp.callback_query(F.data == "admin_broadcast", F.from_user.id == ADMIN_ID)
