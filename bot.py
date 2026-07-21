@@ -53,15 +53,39 @@ if os.path.exists(OLD_DB_PATH) and not os.path.exists(DB_PATH):
 conn = sqlite3.connect(DB_PATH, check_same_thread=False)
 cursor = conn.cursor()
 cursor.execute("CREATE TABLE IF NOT EXISTS users (user_id INTEGER PRIMARY KEY, first_name TEXT, count INTEGER DEFAULT 0, referred_by INTEGER, has_requested INTEGER DEFAULT 0)")
-cursor.execute("CREATE TABLE IF NOT EXISTS groups (group_id INTEGER PRIMARY KEY, group_title TEXT)")
+cursor.execute("CREATE TABLE IF NOT EXISTS groups (group_id INTEGER PRIMARY KEY, group_title TEXT, invite_link TEXT)")
 cursor.execute("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)")
 cursor.execute("CREATE TABLE IF NOT EXISTS warnings (user_id INTEGER, group_id INTEGER, warn_count INTEGER DEFAULT 0, PRIMARY KEY(user_id, group_id))")
+
+# DB Migration: invite_link Column မရှိသေးပါက အလိုအလျောက် ဖြည့်ပေးမည်
+try:
+    cursor.execute("ALTER TABLE groups ADD COLUMN invite_link TEXT")
+    conn.commit()
+except:
+    pass
 conn.commit()
 
 # --- DB FUNCTIONS ---
-def save_group(group_id, title):
+async def save_group_with_link(group_id, title):
+    invite_link = ""
     try:
-        cursor.execute("INSERT OR REPLACE INTO groups (group_id, group_title) VALUES (?, ?)", (group_id, title))
+        # Chat Link ရအောင် ကြိုးစားယူမည်
+        chat = await bot.get_chat(group_id)
+        if chat.invite_link:
+            invite_link = chat.invite_link
+        elif chat.username:
+            invite_link = f"https://t.me/{chat.username}"
+        else:
+            # Bot ကို Admin ပေးထားပါက Invite Link အသစ် ထုတ်ပေးမည်
+            invite_link = await bot.export_chat_invite_link(group_id)
+    except Exception as e:
+        logging.error(f"Failed to fetch invite link for group {group_id}: {e}")
+
+    try:
+        if invite_link:
+            cursor.execute("INSERT OR REPLACE INTO groups (group_id, group_title, invite_link) VALUES (?, ?, ?)", (group_id, title, invite_link))
+        else:
+            cursor.execute("INSERT INTO groups (group_id, group_title) VALUES (?, ?) ON CONFLICT(group_id) DO UPDATE SET group_title=excluded.group_title", (group_id, title))
         conn.commit()
     except Exception as e:
         logging.error(f"Group DB Error: {e}")
@@ -223,11 +247,11 @@ async def fetch_old_users(call: types.CallbackQuery):
     else:
         await call.message.answer(user_list_text, parse_mode="Markdown")
 
-# --- ADMIN BUTTON: FETCH GROUPS ---
+# --- ADMIN BUTTON: FETCH GROUPS WITH LINKS ---
 @dp.callback_query(F.data == "admin_fetch_groups", F.from_user.id == ADMIN_ID)
 async def fetch_groups(call: types.CallbackQuery):
     await call.answer("Group စာရင်းများ ဆွဲထုတ်နေပါသည်...", show_alert=False)
-    cursor.execute("SELECT group_id, group_title FROM groups")
+    cursor.execute("SELECT group_id, group_title, invite_link FROM groups")
     all_groups = cursor.fetchall()
     
     if not all_groups:
@@ -236,8 +260,8 @@ async def fetch_groups(call: types.CallbackQuery):
 
     group_list_text = f"📊 စုစုပေါင်း Bot ရောက်ရှိနေသော Group စာရင်း ({len(all_groups)} ခု)\n\n"
     for idx, g in enumerate(all_groups, start=1):
-        g_id, title = g[0], g[1] if g[1] else "No Title"
-        group_list_text += f"{idx}. Title: {title} | Group ID: `{g_id}`\n"
+        g_id, title, link = g[0], g[1] if g[1] else "No Title", g[2] if g[2] else "No Link"
+        group_list_text += f"{idx}. Title: {title}\n   ID: `{g_id}`\n   Link: {link}\n\n"
 
     if len(group_list_text) > 4000:
         file_path = "group_list.txt"
@@ -245,10 +269,10 @@ async def fetch_groups(call: types.CallbackQuery):
             f.write(group_list_text)
         
         doc = types.FSInputFile(file_path)
-        await call.message.answer_document(doc, caption="📄 Group စာရင်းအပြည့်အစုံ ဖိုင်ဖြစ်ပါတယ်။")
+        await call.message.answer_document(doc, caption="📄 Group စာရင်းနှင့် Invite Link များ ဖိုင်ဖြစ်ပါတယ်။")
         os.remove(file_path)
     else:
-        await call.message.answer(group_list_text, parse_mode="Markdown")
+        await call.message.answer(group_list_text, parse_mode="Markdown", disable_web_page_preview=True)
 
 # --- BROADCAST TO USER SYSTEM ---
 @dp.callback_query(F.data == "admin_broadcast", F.from_user.id == ADMIN_ID)
@@ -362,7 +386,7 @@ async def send_video_promo(call: types.CallbackQuery):
         return
     await call.answer("ဗီဒီယိုကို ခဏစောင့်ပါ...")
     try:
-        await bot.send_video(chat_id=call.from_user.id, video=file_id, caption="ဒီဗီဒီယိုလေးကတော့ Preview အနနဲ့ တင်ပေးထားတာပါဗျာ 💋")
+        await bot.send_video(chat_id=call.from_user.id, video=file_id, caption="ဒီဗီဒီယိုလေးကတော့ Preview အနေနဲ့ တင်ပေးထားတာပါဗျာ 💋")
     except:
         await call.message.answer("⚠️ ဗီဒီယိုဖိုင် ပြသရာတွင် အမှားတစ်ခု ဖြစ်ပေါ်နေပါသည်။")
 
@@ -399,7 +423,7 @@ async def join_req(update: types.ChatJoinRequest):
 @dp.my_chat_member()
 async def bot_added_to_group(event: types.ChatMemberUpdated):
     if event.new_chat_member.status in ["member", "administrator"]:
-        save_group(event.chat.id, event.chat.title)
+        await save_group_with_link(event.chat.id, event.chat.title)
         if event.new_chat_member.status == "member":
             try:
                 await bot.send_message(
@@ -411,7 +435,7 @@ async def bot_added_to_group(event: types.ChatMemberUpdated):
 # --- GROUP MESSAGES & ANTI-SPAM / WARNING & AUTO-MUTE ---
 @dp.message(F.chat.type.in_({"group", "supergroup"}))
 async def handle_group_messages(message: types.Message):
-    save_group(message.chat.id, message.chat.title)
+    await save_group_with_link(message.chat.id, message.chat.title)
     if message.from_user and not message.from_user.is_bot:
         auto_collect_user(message.from_user.id, message.from_user.first_name)
 
@@ -458,11 +482,8 @@ async def handle_group_messages(message: types.Message):
             logging.error(f"Failed to delete spam message: {e}")
 
         uid = message.from_user.id
-        # HTML Special Character များကို Clean လုပ်၍ Direct MT ရအောင် စီစဉ်ခြင်း
         raw_name = message.from_user.first_name or "User"
         uname = raw_name.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-        
-        # Username ပါပါ/မပါပါ tg://user?id= ပုံစံဖြင့် HTML Direct Mention ပြုလုပ်ခြင်း
         user_mention = f"<a href='tg://user?id={uid}'>{uname}</a>"
         g_id = message.chat.id
 
