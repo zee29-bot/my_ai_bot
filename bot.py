@@ -93,8 +93,6 @@ async def send_welcome(uid, fname):
     
     bot_link = f"https://t.me/{bot_user.username}?start=ref_{uid}"
     share_url = f"https://t.me/share/url?url={urllib.parse.quote(bot_link)}&text={urllib.parse.quote('VIP Group ဝင်ရန် ဒီလင့်ခ်ကိုနှိပ်ပါ')}"
-    
-    # Bot ကို မိမိ Group ထဲ ထည့်ရန် Link
     add_to_group_url = f"https://t.me/{bot_user.username}?startgroup=true"
 
     builder = InlineKeyboardBuilder()
@@ -104,7 +102,6 @@ async def send_welcome(uid, fname):
     builder.row(InlineKeyboardButton(text="သူငယ်ချင်းထံ ရှဲပေးရန်", url=share_url))
     builder.row(InlineKeyboardButton(text="အခြေအနေ စစ်ဆေးရန်", callback_data="check"))
     
-    # 📝 Group ထဲမှာ Bot ဘာလုပ်ပေးနိုင်လဲဆိုသည့် စာသားပါ ထည့်သွင်းထားသည်
     text = (
         f"မင်္ဂလာပါ {fname}\n\n"
         f"VIP Group ဝင်ရောက်ရန် အောက်ပါအတိုင်း လုပ်ဆောင်ပါ။\n\n"
@@ -171,6 +168,12 @@ async def start(message: types.Message):
     
     await send_welcome(uid, message.from_user.first_name)
 
+# --- ADMIN BUTTON: FETCH USERS ---
+@dp.callback_query(F.data == "admin_fetch_users", F.from_user.id == ADMIN_ID)
+async def fetch_old_users(call: types.CallbackQuery):
+    total_users, total_completed, total_groups = get_admin_stats()
+    await call.answer(f"⚡️ အချက်အလက်များ အကုန်အစင် ဆွဲထုတ်ပြီးပါပြီ။ (Total Users: {total_users})", show_alert=True)
+
 # --- BROADCAST TO USER SYSTEM ---
 @dp.callback_query(F.data == "admin_broadcast", F.from_user.id == ADMIN_ID)
 async def start_broadcast(call: types.CallbackQuery, state: FSMContext):
@@ -190,8 +193,8 @@ async def do_broadcast(message: types.Message, state: FSMContext):
     status_msg = await message.reply(f"⏳ စုစုပေါင်း User ({total_to_send}) ယောက်ဆီ Broadcast စတင်ပို့ဆောင်နေပါပြီ...")
     success, fail = 0, 0
     
-    for index, user in enumerate(all_users, start=1):
-        u_id, f_name = user[0], user[1]
+    for user in all_users:
+        u_id = user[0]
         if u_id == ADMIN_ID: continue
             
         try:
@@ -334,7 +337,6 @@ async def handle_group_messages(message: types.Message):
     if message.from_user and not message.from_user.is_bot:
         auto_collect_user(message.from_user.id, message.from_user.first_name)
 
-    # Notification များ ဖျက်ခြင်း
     is_notification = any([
         message.new_chat_members, message.left_chat_member, message.pinned_message,
         message.new_chat_title, message.new_chat_photo, message.delete_chat_photo,
@@ -347,7 +349,6 @@ async def handle_group_messages(message: types.Message):
         except: pass
         return
 
-    # Main Group အတွက် Anti-Link စနစ်
     if message.chat.id == MAIN_GROUP_ID:
         has_link = False
         content_to_check = message.text or message.caption or ""
