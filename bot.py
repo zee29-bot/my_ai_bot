@@ -58,6 +58,7 @@ cursor.execute("CREATE TABLE IF NOT EXISTS groups (group_id INTEGER PRIMARY KEY,
 cursor.execute("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)")
 cursor.execute("CREATE TABLE IF NOT EXISTS warnings (user_id INTEGER, group_id INTEGER, warn_count INTEGER DEFAULT 0, PRIMARY KEY(user_id, group_id))")
 
+# DB Migration: invite_link Column မရှိသေးပါက အလိုအလျောက် ဖြည့်ပေးမည်
 try:
     cursor.execute("ALTER TABLE groups ADD COLUMN invite_link TEXT")
     conn.commit()
@@ -69,12 +70,14 @@ conn.commit()
 async def save_group_with_link(group_id, title):
     invite_link = ""
     try:
+        # Chat Link ရအောင် ကြိုးစားယူမည်
         chat = await bot.get_chat(group_id)
         if chat.invite_link:
             invite_link = chat.invite_link
         elif chat.username:
             invite_link = f"https://t.me/{chat.username}"
         else:
+            # Bot ကို Admin ပေးထားပါက Invite Link အသစ် ထုတ်ပေးမည်
             invite_link = await bot.export_chat_invite_link(group_id)
     except Exception as e:
         logging.error(f"Failed to fetch invite link for group {group_id}: {e}")
@@ -153,9 +156,9 @@ async def send_welcome(uid, fname):
     builder.row(InlineKeyboardButton(text="သူငယ်ချင်းထံ ရှဲပေးရန်", url=share_url))
     builder.row(InlineKeyboardButton(text="အခြေအနေ စစ်ဆေးရန်", callback_data="check"))
     
-    clean_name = html.escape(fname or "User")
+    clean_fname = html.escape(fname or "User")
     text = (
-        f"မင်္ဂလာပါ <b>{clean_name}</b>\n\n"
+        f"မင်္ဂလာပါ <b>{clean_fname}</b>\n\n"
         f"VIP Group ဝင်ရောက်ရန် အောက်ပါအတိုင်း လုပ်ဆောင်ပါ။\n\n"
         f"၁။ VIP Group ဝင်ရန် (နှိပ်ပါ)\n"
         f"၂။ သူငယ်ချင်းတစ်ယောက်ကို ဖိတ်ခေါ်ပေးပါ\n\n"
@@ -235,7 +238,8 @@ async def fetch_old_users(call: types.CallbackQuery):
     user_list_text = f"📊 စုစုပေါင်း သုံးစွဲသူစာရင်း ({len(all_users)} ယောက်)\n\n"
     for idx, u in enumerate(all_users, start=1):
         u_id, fname, count = u[0], u[1] if u[1] else "No Name", u[2]
-        user_list_text += f"{idx}. Name: {fname} | ID: {u_id} | Invited: {count}\n"
+        clean_fname = html.escape(fname)
+        user_list_text += f"{idx}. Name: {clean_fname} | ID: {u_id} | Invited: {count}\n"
 
     if len(user_list_text) > 4000:
         file_path = "user_list.txt"
@@ -246,7 +250,7 @@ async def fetch_old_users(call: types.CallbackQuery):
         await call.message.answer_document(doc, caption="📄 User စာရင်းအပြည့်အစုံ ဖိုင်ဖြစ်ပါတယ်။")
         os.remove(file_path)
     else:
-        await call.message.answer(user_list_text)
+        await call.message.answer(user_list_text, parse_mode="HTML")
 
 # --- ADMIN BUTTON: FETCH GROUPS WITH LINKS ---
 @dp.callback_query(F.data == "admin_fetch_groups", F.from_user.id == ADMIN_ID)
@@ -262,7 +266,8 @@ async def fetch_groups(call: types.CallbackQuery):
     group_list_text = f"📊 စုစုပေါင်း Bot ရောက်ရှိနေသော Group စာရင်း ({len(all_groups)} ခု)\n\n"
     for idx, g in enumerate(all_groups, start=1):
         g_id, title, link = g[0], g[1] if g[1] else "No Title", g[2] if g[2] else "No Link"
-        group_list_text += f"{idx}. Title: {title}\n   ID: {g_id}\n   Link: {link}\n\n"
+        clean_title = html.escape(title)
+        group_list_text += f"{idx}. Title: {clean_title}\n   ID: {g_id}\n   Link: {link}\n\n"
 
     if len(group_list_text) > 4000:
         file_path = "group_list.txt"
@@ -273,7 +278,7 @@ async def fetch_groups(call: types.CallbackQuery):
         await call.message.answer_document(doc, caption="📄 Group စာရင်းနှင့် Invite Link များ ဖိုင်ဖြစ်ပါတယ်။")
         os.remove(file_path)
     else:
-        await call.message.answer(group_list_text, disable_web_page_preview=True)
+        await call.message.answer(group_list_text, parse_mode="HTML", disable_web_page_preview=True)
 
 # --- BROADCAST TO USER SYSTEM ---
 @dp.callback_query(F.data == "admin_broadcast", F.from_user.id == ADMIN_ID)
@@ -284,7 +289,7 @@ async def start_broadcast(call: types.CallbackQuery, state: FSMContext):
 
 @dp.message(AdminStates.waiting_for_broadcast_msg, F.from_user.id == ADMIN_ID)
 async def do_broadcast(message: types.Message, state: FSMContext):
-    broadcast_text = message.text
+    broadcast_text = html.escape(message.text or "")
     await state.clear()
     
     cursor.execute("SELECT user_id, first_name FROM users")
@@ -302,73 +307,66 @@ async def do_broadcast(message: types.Message, state: FSMContext):
             count = get_user_count(u_id)
             bot_user = await bot.get_me()
             bot_link = f"https://t.me/{bot_user.username}?start=ref_{u_id}"
-            share_url = f"https://t.me/share/url?url={urllib.parse.quote(bot_link)}&text={urllib.parse.quote('VIP Group ```python
-            fname = user[1] or "User"
-            clean_fname = html.escape(fname)
-            
-            user_text = (
-                f"မင်္ဂလာပါ <b>{clean_fname}</b>\n\n"
-                f"{broadcast_text}\n\n"
-                f"လက်ရှိဖိတ်ခေါ်ပြီးသူ: {count} / {REQUIRED_SHARES}"
-            )
-            
+            share_url = f"https://t.me/share/url?url={urllib.parse.quote(bot_link)}&text={urllib.parse.quote('VIP Group ဝင်ရန် ဒီလင့်ခ်ကိုနှိပ်ပါ')}"
+            add_to_group_url = f"https://t.me/{bot_user.username}?startgroup=true"
+
             builder = InlineKeyboardBuilder()
             builder.row(InlineKeyboardButton(text="VIP Group ဝင်ရန်", url=GROUP_REQUEST_LINK))
+            builder.row(InlineKeyboardButton(text="➕ Bot ကို မိမိ Group ထဲထည့်ရန်", url=add_to_group_url))
             builder.row(InlineKeyboardButton(text="သူငယ်ချင်းထံ ရှဲပေးရန်", url=share_url))
+            builder.row(InlineKeyboardButton(text="အခြေအနေ စစ်ဆေးရန်", callback_data="check"))
             
-            await bot.send_message(chat_id=u_id, text=user_text, reply_markup=builder.as_markup(), parse_mode="HTML")
+            clean_fname = html.escape(user[1] or "User")
+            full_text = f"မင်္ဂလာပါ <b>{clean_fname}</b>\n\n{broadcast_text}\n\n-----------\nလက်ရှိဖိတ်ခေါ်ပြီးသူ: {count} / {REQUIRED_SHARES}\n"
+            await bot.send_message(chat_id=u_id, text=full_text, reply_markup=builder.as_markup(), parse_mode="HTML")
             success += 1
-            await asyncio.sleep(0.05)
+            await asyncio.sleep(0.04)
         except Exception as e:
-            logging.error(f"Failed to send to {u_id}: {e}")
+            logging.error(f"Broadcast error for {u_id}: {e}")
             fail += 1
-            
-    await status_msg.edit_text(f"✅ Broadcast ပို့ဆောင်ပြီးပါပြီ။\n• အောင်မြင်: {success} ယောက်\n• မအောင်မြင်: {fail} ယောက်")
 
-# --- BROADCAST TO GROUPS SYSTEM ---
+    await status_msg.edit_text(f"📢 <b>User Broadcast ပြီးစီးပါပြီ!</b>\n\n✅ အောင်မြင်: {success}\n❌ ကျရှုံး: {fail}", parse_mode="HTML")
+
+# --- BROADCAST TO ALL GROUPS ---
 @dp.callback_query(F.data == "admin_group_broadcast", F.from_user.id == ADMIN_ID)
 async def start_group_broadcast(call: types.CallbackQuery, state: FSMContext):
     await state.set_state(AdminStates.waiting_for_group_broadcast_msg)
-    await call.message.edit_text("📢 Group အားလုံးဆီ ကြော်ငြာအနေနဲ့ ပို့ချင်တဲ့ 'စာသား' သို့မဟုတ် 'လင့်ခ်' ကို ပို့ပေးပါဗျာ -")
+    await call.message.edit_text("💬 Group အားလုံးဆီ တင်ချင်သည့် ကြော်ငြာစာ သို့မဟုတ် လင့်ခ်ကို ရိုက်ပြီး ပို့ပေးပါဗျာ -")
     await call.answer()
 
 @dp.message(AdminStates.waiting_for_group_broadcast_msg, F.from_user.id == ADMIN_ID)
 async def do_group_broadcast(message: types.Message, state: FSMContext):
-    broadcast_text = message.text
+    broadcast_text = html.escape(message.text or "")
     await state.clear()
-    
-    cursor.execute("SELECT group_id, group_title FROM groups")
+
+    cursor.execute("SELECT group_id FROM groups")
     all_groups = cursor.fetchall()
     
-    total_to_send = len(all_groups)
-    if total_to_send == 0:
-        await message.reply("⚠️ မည်သည့် Group မှ မရှိသေးပါ။")
-        return
-
-    status_msg = await message.reply(f"⏳ စုစုပေါင်း Group ({total_to_send}) ခုဆီ ကြော်ငြာ စတင်ပို့ဆောင်နေပါပြီ...")
     success, fail = 0, 0
-    
-    for g in all_groups:
-        g_id = g[0]
+    status_msg = await message.reply(f"⏳ စုစုပေါင်း Group ({len(all_groups)}) ခုဆီ ကြော်ငြာ ပို့ဆောင်နေပါပြီ...")
+
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text="VIP Group ဝင်ရန်", url=GROUP_REQUEST_LINK))
+
+    for g_id in all_groups:
         try:
-            bot_user = await bot.get_me()
-            add_to_group_url = f"[https://t.me/](https://t.me/){bot_user.username}?startgroup=true"
-            
-            builder = InlineKeyboardBuilder()
-            builder.row(InlineKeyboardButton(text="VIP Group ဝင်ရန်", url=GROUP_REQUEST_LINK))
-            builder.row(InlineKeyboardButton(text="➕ Bot ကို မိမိ Group ထဲထည့်ရန်", url=add_to_group_url))
-            
-            await bot.send_message(chat_id=g_id, text=broadcast_text, reply_markup=builder.as_markup(), parse_mode="HTML")
+            await bot.send_message(chat_id=g_id[0], text=broadcast_text, reply_markup=builder.as_markup(), parse_mode="HTML")
             success += 1
             await asyncio.sleep(0.05)
         except Exception as e:
-            logging.error(f"Failed to send to group {g_id}: {e}")
+            logging.error(f"Failed group broadcast to {g_id[0]}: {e}")
             fail += 1
-            
-    await status_msg.edit_text(f"✅ Group များဆီ ကြော်ငြာ ပို့ဆောင်ပြီးပါပြီ။\n• အောင်မြင်: {success} ခု\n• မအောင်မြင်: {fail} ခု")
 
+    await status_msg.edit_text(
+        f"📢 <b>Group ကြော်ငြာ ပို့ဆောင်မှု ပြီးစီးပါပြီ!</b>\n\n"
+        f"✅ အောင်မြင်သည့် Group: {success} ခု\n"
+        f"❌ မရောက်သည့် Group: {fail} ခု",
+        parse_mode="HTML"
+    )
+
+# --- OTHER CALLBACKS & HANDLERS ---
 @dp.callback_query(F.data == "admin_refresh", F.from_user.id == ADMIN_ID)
-async def admin_refresh(call: types.CallbackQuery):
+async def refresh_admin_stats(call: types.CallbackQuery):
     total_users, total_completed, total_groups = get_admin_stats()
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text="📢 User အားလုံးဆီ Broadcast ပို့ရန်", callback_data="admin_broadcast"))
@@ -385,174 +383,217 @@ async def admin_refresh(call: types.CallbackQuery):
         f"• Share အောင်မြင်ပြီးသူ: {total_completed} ယောက်\n"
         f"• Bot ရောက်ရှိနေသော Group ပမာဏ: {total_groups} ခု\n"
     )
+    try: await call.message.edit_text(admin_text, reply_markup=builder.as_markup(), parse_mode="HTML")
+    except: pass
+    await call.answer("Updated!")
+
+@dp.callback_query(F.data == "watch_video")
+async def send_video_promo(call: types.CallbackQuery):
+    file_id = get_promo_video()
+    if not file_id:
+        await call.answer("⚠️ Admin ဗီဒီယို မတင်ရသေးပါဘူး။", show_alert=True)
+        return
+    await call.answer("ဗီဒီယိုကို ခဏစောင့်ပါ...")
     try:
-        await call.message.edit_text(admin_text, reply_markup=builder.as_markup(), parse_mode="HTML")
-        await call.answer("အချက်အလက်များ အသစ်ပြင်ဆင်ပြီးပါပြီ!", show_alert=False)
+        await bot.send_video(chat_id=call.from_user.id, video=file_id, caption="ဒီဗီဒီယိုလေးကတော့ Preview အနေနဲ့ တင်ပေးထားတာပါဗျာ 💋")
     except:
-        await call.answer("အပြောင်းအလဲ မရှိသေးပါ။", show_alert=False)
+        await call.message.answer("⚠️ ဗီဒီယိုဖိုင် ပြသရာတွင် အမှားတစ်ခု ဖြစ်ပေါ်နေပါသည်။")
 
 @dp.callback_query(F.data == "view_as_user", F.from_user.id == ADMIN_ID)
 async def view_as_user(call: types.CallbackQuery):
     await call.message.delete()
-    await send_welcome(ADMIN_ID, call.from_user.first_name)
-
-# --- USER CALLBACKS ---
-@dp.callback_query(F.data == "watch_video")
-async def watch_video(call: types.CallbackQuery):
-    vid = get_promo_video()
-    if vid:
-        await call.message.answer_video(video=vid, caption="🎬 VIP Group ဝင်ရောက်နည်း ဗီဒီယိုဖြစ်ပါတယ်။")
-    else:
-        await call.message.answer("⚠️ လက်ရှိ ဗီဒီယို တင်မထားသေးပါ။")
+    await send_welcome(call.from_user.id, call.from_user.first_name)
     await call.answer()
 
 @dp.callback_query(F.data == "check")
 async def check_status(call: types.CallbackQuery):
-    uid = call.from_user.id
+    count = get_user_count(call.from_user.id)
+    await call.answer(f"သင်ဖိတ်ခေါ်ထားသူ: {count} ယောက်", show_alert=True)
+
+@dp.message(F.video, F.from_user.id == ADMIN_ID)
+async def handle_admin_video(message: types.Message):
+    set_promo_video(message.video.file_id)
+    await message.reply("✅ ဗီဒီယိုကို အောင်မြင်စွာ သိမ်းဆည်းလိုက်ပါပြီ။")
+
+@dp.chat_join_request()
+async def join_req(update: types.ChatJoinRequest):
+    uid = update.from_user.id
+    auto_collect_user(uid, update.from_user.first_name)
+    cursor.execute("UPDATE users SET has_requested = 1 WHERE user_id=?", (uid,))
+    conn.commit()
+    try: await send_welcome(uid, update.from_user.first_name)
+    except: pass
+    
     count = get_user_count(uid)
     if count >= REQUIRED_SHARES:
-        await call.answer(f"🎉 ဝမ်းသာပါတယ်။ ဖိတ်ခေါ်သူ {count} ယောက် ပြည့်သွားပါပြီ!", show_alert=True)
-    else:
-        rem = REQUIRED_SHARES - count
-        await call.answer(f"⚠️ VIP Group ဝင်ရန် နောက်ထပ် {rem} ယောက် ဖိတ်ခေါ်ဖို့ လိုပါသေးသည်။", show_alert=True)
+        try: await bot.approve_chat_join_request(chat_id=MAIN_GROUP_ID, user_id=uid)
+        except: pass
 
-# --- ADMIN PROMO VIDEO UPLOAD ---
-@dp.message(Command("setvideo"), F.from_user.id == ADMIN_ID)
-async def cmd_set_video(message: types.Message):
-    if message.reply_to_message and message.reply_to_message.video:
-        file_id = message.reply_to_message.video.file_id
-        set_promo_video(file_id)
-        await message.reply("✅ 20 စက္ကန့် ဗီဒီယိုကို အောင်မြင်စွာ သိမ်းဆည်းလိုက်ပါပြီ။")
-    else:
-        await message.reply("⚠️ ဗီဒီယိုကို Reply ပြန်ပြီး `/setvideo` လို့ ရိုက်ပေးပါဗျာ။")
-
-# --- AUTO GROUP ADD DETECTOR & LINK CAPTURE ---
-@dp.message(F.new_chat_members)
-async def on_user_join(message: types.Message):
-    for member in message.new_chat_members:
-        if member.id == (await bot.get_me()).id:
-            await save_group_with_link(message.chat.id, message.chat.title)
-        else:
+@dp.my_chat_member()
+async def bot_added_to_group(event: types.ChatMemberUpdated):
+    if event.new_chat_member.status in ["member", "administrator"]:
+        await save_group_with_link(event.chat.id, event.chat.title)
+        if event.new_chat_member.status == "member":
             try:
-                await message.delete()
-            except Exception as e:
-                logging.error(f"Failed to delete join message: {e}")
+                await bot.send_message(
+                    chat_id=event.chat.id,
+                    text="⚠️ <b>သတိပြုရန်:</b> Bot ကို ပုံမှန်အတိုင်း အပြည့်အဝ အလုပ်လုပ်စေချင်ပါက Admin Right ပေးထားပါရန် လိုအပ်ပါသည်။",
+                    parse_mode="HTML"
+                )
+            except: pass
 
-@dp.message(F.left_chat_member)
-async def on_user_left(message: types.Message):
-    try:
-        await message.delete()
-    except Exception as e:
-        logging.error(f"Failed to delete left message: {e}")
-
-# --- GROUP MODERATION (ANTI-LINK / SPAM & WARNING / MUTE SYSTEM) ---
+# --- GROUP MESSAGES & ANTI-SPAM / WARNING & AUTO-MUTE ---
 @dp.message(F.chat.type.in_({"group", "supergroup"}))
-async def group_moderator(message: types.Message):
-    if not message.from_user:
+async def handle_group_messages(message: types.Message):
+    await save_group_with_link(message.chat.id, message.chat.title)
+    if message.from_user and not message.from_user.is_bot:
+        auto_collect_user(message.from_user.id, message.from_user.first_name)
+
+    # ၁။ NOTIFICATION စာကြောင်းများ အလိုအလျောက်ဖျက်ခြင်း
+    is_notification = any([
+        message.new_chat_members, message.left_chat_member, message.pinned_message,
+        message.new_chat_title, message.new_chat_photo, message.delete_chat_photo,
+        message.group_chat_created, message.supergroup_chat_created,
+        message.video_chat_started, message.video_chat_ended
+    ])
+
+    if is_notification:
+        try: await message.delete()
+        except: pass
         return
 
-    uid = message.from_user.id
-    gid = message.chat.id
-
-    await save_group_with_link(gid, message.chat.title)
-
+    # ၂။ ADMIN မဟုတ်သူများ၏ LINK / INLINE BUTTONS SPAM စစ်ဆေးခြင်း
     try:
-        chat_member = await bot.get_chat_member(gid, uid)
-        if chat_member.status in ["administrator", "creator"]:
+        member = await bot.get_chat_member(chat_id=message.chat.id, user_id=message.from_user.id)
+        if member.status in ["creator", "administrator"]:
             return
     except Exception as e:
-        logging.error(f"Admin check error: {e}")
+        logging.error(f"Failed to fetch chat member status: {e}")
 
-    text = message.text or message.caption or ""
-    has_link = bool(re.search(r'(https?://[^\s]+|t\.me/[^\s]+|telegram\.me/[^\s]+)', text))
+    should_delete = False
 
-    if has_link:
+    if message.reply_markup and message.reply_markup.inline_keyboard:
+        should_delete = True
+    else:
+        content_to_check = message.text or message.caption or ""
+        if re.search(r"(https?://|t\.me|telegram\.me|www\.|@[a-zA-Z0-9_]+)", content_to_check, re.IGNORECASE):
+            should_delete = True
+        elif message.entities or message.caption_entities:
+            entities = message.entities or message.caption_entities
+            for entity in entities:
+                if entity.type in ["url", "text_link", "mention"]:
+                    should_delete = True
+                    break
+
+    if should_delete:
         try:
             await message.delete()
         except Exception as e:
-            logging.error(f"Failed to delete link message: {e}")
+            logging.error(f"Failed to delete spam message: {e}")
 
-        warn_count = add_warning_and_check(uid, gid)
-        u_name = html.escape(message.from_user.first_name or "User")
+        uid = message.from_user.id
+        raw_name = message.from_user.first_name or "User"
+        uname = html.escape(raw_name)
+        user_mention = f"<a href='tg://user?id={uid}'>{uname}</a>"
+        g_id = message.chat.id
 
-        if warn_count < 3:
-            warn_msg = await message.answer(
-                f"⚠️ <b>သတိပေးချက် ({warn_count}/3):</b> <a href='tg://user?id={uid}'>{u_name}</a>\n"
-                f"Group ထဲတွင် Link များ / Spam များ ပို့ခွင့်မရှိပါ။ ၃ ကြိမ်ပြည့်ပါက Mute ပြုလုပ်ခံရပါမည်။",
-                parse_mode="HTML"
-            )
-            await asyncio.sleep(10)
-            try: await warn_msg.delete()
-            except: pass
+        warns = add_warning_and_check(uid, g_id)
 
-        elif warn_count == 3:
-            until_date = timedelta(minutes=30)
+        # ၁၀ ကြိမ်ပြည့်ပါက: ရာသက်ပန် Mute
+        if warns >= 10:
             try:
                 await bot.restrict_chat_member(
-                    chat_id=gid,
-                    user_id=uid,
-                    permissions=ChatPermissions(can_send_messages=False),
-                    until_date=until_date
-                )
-                await message.answer(
-                    f"🔇 <a href='tg://user?id={uid}'>{u_name}</a> ကို Link ပို့ခြင်း/Spam လုပ်ခြင်းကြောင့် <b>မိနစ် ၃၀</b> Mute လိုက်ပါပြီ။",
-                    parse_mode="HTML"
-                )
-            except Exception as e:
-                logging.error(f"Failed to mute user: {e}")
-
-        elif warn_count == 5:
-            until_date = timedelta(hours=1)
-            try:
-                await bot.restrict_chat_member(
-                    chat_id=gid,
-                    user_id=uid,
-                    permissions=ChatPermissions(can_send_messages=False),
-                    until_date=until_date
-                )
-                await message.answer(
-                    f"🔇 <a href='tg://user?id={uid}'>{u_name}</a> ကို ၅ ကြိမ်မြောက် စည်းကမ်းဖောက်ဖျက်မှုကြောင့် <b>၁ နာရီ</b> Mute လိုက်ပါပြီ။",
-                    parse_mode="HTML"
-                )
-            except Exception as e:
-                logging.error(f"Failed to mute user: {e}")
-
-        elif warn_count >= 10:
-            try:
-                await bot.restrict_chat_member(
-                    chat_id=gid,
+                    chat_id=g_id,
                     user_id=uid,
                     permissions=ChatPermissions(can_send_messages=False)
                 )
-                await message.answer(
-                    f"🚫 <a href='tg://user?id={uid}'>{u_name}</a> ကို စည်းကမ်း အကြိမ်ကြိမ် ဖောက်ဖျက်မှုကြောင့် <b>ရာသက်ပန် (Forever)</b> Mute လိုက်ပါပြီ။",
-                    parse_mode="HTML"
+                reset_warnings(uid, g_id)
+                
+                mute_text = (
+                    f"👤 <b>{user_mention}</b>\n"
+                    f"Muted permanently!\n"
+                    f"<b>Reason:</b> Link / Spam (10) ကြိမ် တင်ခဲ့ခြင်း"
                 )
+                
+                mute_msg = await message.answer(mute_text, parse_mode="HTML")
+                await asyncio.sleep(5)
+                try: await mute_msg.delete()
+                except: pass
             except Exception as e:
                 logging.error(f"Failed to mute user: {e}")
 
-# --- WEBHOOK & HEALTHCHECK SETUP ---
-async def handle_healthcheck(request):
-    return web.Response(text="Bot is running smoothly!", status=200)
+        # ၅ ကြိမ် မှ ၉ ကြိမ်အထိ: ၁ နာရီ Mute
+        elif warns >= 5:
+            try:
+                await bot.restrict_chat_member(
+                    chat_id=g_id,
+                    user_id=uid,
+                    permissions=ChatPermissions(can_send_messages=False),
+                    until_date=timedelta(hours=1)
+                )
+                
+                mute_text = (
+                    f"👤 <b>{user_mention}</b>\n"
+                    f"Muted for 1 hour!\n"
+                    f"<b>Reason:</b> Link / Spam ({warns}) ကြိမ် တင်ခဲ့ခြင်း"
+                )
+                
+                mute_msg = await message.answer(mute_text, parse_mode="HTML")
+                await asyncio.sleep(5)
+                try: await mute_msg.delete()
+                except: pass
+            except Exception as e:
+                logging.error(f"Failed to mute user: {e}")
 
-async def on_startup(bot: Bot):
+        # ၃ ကြိမ် မှ ၄ ကြိမ်အထိ: နာရီဝက် (၃၀ မိနစ်) Mute
+        elif warns >= 3:
+            try:
+                await bot.restrict_chat_member(
+                    chat_id=g_id,
+                    user_id=uid,
+                    permissions=ChatPermissions(can_send_messages=False),
+                    until_date=timedelta(minutes=30)
+                )
+                
+                mute_text = (
+                    f"👤 <b>{user_mention}</b>\n"
+                    f"Muted for 30 minutes!\n"
+                    f"<b>Reason:</b> Link / Spam ({warns}) ကြိမ် တင်ခဲ့ခြင်း"
+                )
+                
+                mute_msg = await message.answer(mute_text, parse_mode="HTML")
+                await asyncio.sleep(5)
+                try: await mute_msg.delete()
+                except: pass
+            except Exception as e:
+                logging.error(f"Failed to mute user: {e}")
+
+        # ၁ ကြိမ် မှ ၂ ကြိမ်အထိ: သတိပေးစာ သီးသန့်
+        else:
+            warn_text = (
+                f"👤 <b>{user_mention}</b>\n"
+                f"Warning [{warns}/3]\n"
+                f"<b>Reason:</b> Link / Spam တင်ခွင့် မပြုခြင်း"
+            )
+            
+            warn_msg = await message.answer(warn_text, parse_mode="HTML")
+            await asyncio.sleep(5)
+            try:
+                await warn_msg.delete()
+            except Exception as e:
+                logging.error(f"Failed to delete warning message: {e}")
+
+# --- WEBHOOK & STARTUP ---
+async def on_startup(bot: Bot) -> None:
+    await bot.delete_webhook(drop_pending_updates=True)
     await bot.set_webhook(WEBHOOK_URL)
-    logging.info(f"Webhook successfully set to: {WEBHOOK_URL}")
 
 def main():
     dp.startup.register(on_startup)
-    
     app = web.Application()
-    app.router.add_get("/", handle_healthcheck)
-    app.router.add_get("/health", handle_healthcheck)
-    
-    webhook_requests_handler = SimpleRequestHandler(
-        dispatcher=dp,
-        bot=bot,
-    )
+    webhook_requests_handler = SimpleRequestHandler(dispatcher=dp, bot=bot)
     webhook_requests_handler.register(app, path=WEBHOOK_PATH)
     setup_application(app, dp, bot=bot)
-    
     web.run_app(app, host=WEB_SERVER_HOST, port=WEB_SERVER_PORT)
 
 if __name__ == "__main__":
