@@ -15,7 +15,7 @@ from aiogram.fsm.state import State, StatesGroup
 from aiohttp import web
 from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
 
-# --- CONFIGURATION ---
+# CONFIGURATION
 BOT_TOKEN = "8962171444:AAGfz63sO6HQwlWms51RbaRE5WlROji6aYk"      
 MAIN_GROUP_ID = -1003913717685             
 REQUIRED_SHARES = 1                   
@@ -32,24 +32,14 @@ logging.basicConfig(level=logging.INFO)
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
-# --- STATES ---
 class AdminStates(StatesGroup):
     waiting_for_broadcast_msg = State()
     waiting_for_group_broadcast_msg = State()
 
-# --- DATABASE ---
+# DATABASE
 DATA_DIR = os.getenv("DATA_DIR", "/data")
 os.makedirs(DATA_DIR, exist_ok=True)
-
 DB_PATH = os.path.join(DATA_DIR, "group_gate.db")
-
-OLD_DB_PATH = "group_gate.db"
-if os.path.exists(OLD_DB_PATH) and not os.path.exists(DB_PATH):
-    try:
-        os.rename(OLD_DB_PATH, DB_PATH)
-        logging.info("Moved old DB to persistent volume path.")
-    except Exception as e:
-        logging.error(f"Failed to move old DB: {e}")
 
 conn = sqlite3.connect(DB_PATH, check_same_thread=False)
 cursor = conn.cursor()
@@ -57,15 +47,8 @@ cursor.execute("CREATE TABLE IF NOT EXISTS users (user_id INTEGER PRIMARY KEY, f
 cursor.execute("CREATE TABLE IF NOT EXISTS groups (group_id INTEGER PRIMARY KEY, group_title TEXT, invite_link TEXT)")
 cursor.execute("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)")
 cursor.execute("CREATE TABLE IF NOT EXISTS warnings (user_id INTEGER, group_id INTEGER, warn_count INTEGER DEFAULT 0, PRIMARY KEY(user_id, group_id))")
-
-try:
-    cursor.execute("ALTER TABLE groups ADD COLUMN invite_link TEXT")
-    conn.commit()
-except:
-    pass
 conn.commit()
 
-# --- DB FUNCTIONS ---
 async def save_group_with_link(group_id, title):
     invite_link = ""
     try:
@@ -77,7 +60,7 @@ async def save_group_with_link(group_id, title):
         else:
             invite_link = await bot.export_chat_invite_link(group_id)
     except Exception as e:
-        logging.error(f"Failed to fetch invite link for group {group_id}: {e}")
+        logging.error(f"Failed link fetch: {e}")
 
     try:
         clean_title = html.escape(title or "No Title")
@@ -87,16 +70,7 @@ async def save_group_with_link(group_id, title):
             cursor.execute("INSERT INTO groups (group_id, group_title) VALUES (?, ?) ON CONFLICT(group_id) DO UPDATE SET group_title=excluded.group_title", (group_id, clean_title))
         conn.commit()
     except Exception as e:
-        logging.error(f"Group DB Error: {e}")
-
-def get_promo_video():
-    cursor.execute("SELECT value FROM settings WHERE key='promo_video'")
-    res = cursor.fetchone()
-    return res[0] if res else None
-
-def set_promo_video(file_id):
-    cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('promo_video', ?)", (file_id,))
-    conn.commit()
+        logging.error(f"DB Error: {e}")
 
 def get_user_count(uid):
     cursor.execute("SELECT count FROM users WHERE user_id=?", (uid,))
@@ -118,9 +92,8 @@ def auto_collect_user(uid, fname):
         cursor.execute("INSERT OR IGNORE INTO users (user_id, first_name) VALUES (?, ?)", (uid, clean_fname))
         conn.commit()
     except Exception as e:
-        logging.error(f"Database error in auto_collect: {e}")
+        logging.error(f"DB User Error: {e}")
 
-# --- WARNING & MUTE LOGIC ---
 def add_warning_and_check(uid, g_id):
     cursor.execute("SELECT warn_count FROM warnings WHERE user_id=? AND group_id=?", (uid, g_id))
     res = cursor.fetchone()
@@ -137,7 +110,7 @@ def reset_warnings(uid, g_id):
     cursor.execute("DELETE FROM warnings WHERE user_id=? AND group_id=?", (uid, g_id))
     conn.commit()
 
-# --- USER UI ---
+# UI
 async def send_welcome(uid, fname):
     count = get_user_count(uid)
     bot_user = await bot.get_me()
@@ -148,7 +121,6 @@ async def send_welcome(uid, fname):
 
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text="⭐ VIP Group ဝင်ရန်", url=GROUP_REQUEST_LINK))
-    builder.row(InlineKeyboardButton(text="🎬 20 စက္ကန့် ဗီဒီယို ကြည့်ရန်", callback_data="watch_video"))
     builder.row(InlineKeyboardButton(text="➕ Bot ကို မိမိ Group ထဲထည့်ရန်", url=add_to_group_url))
     builder.row(InlineKeyboardButton(text="📩 သူငယ်ချင်းထံ ရှဲပေးရန်", url=share_url))
     builder.row(InlineKeyboardButton(text="🔄 အခြေအနေ စစ်ဆေးရန်", callback_data="check"))
@@ -161,7 +133,7 @@ async def send_welcome(uid, fname):
     )
     await bot.send_message(chat_id=uid, text=text, reply_markup=builder.as_markup(), parse_mode="HTML")
 
-# --- START COMMAND ---
+# COMMANDS
 @dp.message(Command("start"))
 async def start(message: types.Message):
     if message.chat.type != "private":
@@ -178,7 +150,6 @@ async def start(message: types.Message):
         builder.row(InlineKeyboardButton(text="📄 User စာရင်းယူရန်", callback_data="admin_fetch_users"))
         builder.row(InlineKeyboardButton(text="📄 Group စာရင်းယူရန်", callback_data="admin_fetch_groups"))
         builder.row(InlineKeyboardButton(text="🔄 Refresh", callback_data="admin_refresh"))
-        builder.row(InlineKeyboardButton(text="👤 User Interface ကြည့်ရန်", callback_data="view_as_user"))
         
         admin_text = (
             f"⚙️ <b>Admin Panel</b>\n\n"
@@ -209,7 +180,7 @@ async def start(message: types.Message):
     
     await send_welcome(uid, message.from_user.first_name)
 
-# --- ADMIN ACTIONS ---
+# ADMIN ACTIONS
 @dp.callback_query(F.data == "admin_fetch_users", F.from_user.id == ADMIN_ID)
 async def fetch_old_users(call: types.CallbackQuery):
     await call.answer("ဆွဲထုတ်နေပါသည်...", show_alert=False)
@@ -308,12 +279,11 @@ async def admin_refresh(call: types.CallbackQuery):
     total_users, total_completed, total_groups = get_admin_stats()
     
     builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(text="📢 User များဆီ Broadcast ပို့ရန်", callback_data="admin_broadcast"))
-    builder.row(InlineKeyboardButton(text="📢 Group များဆီ Broadcast ပို့ရန်", callback_data="admin_group_broadcast"))
-    builder.row(InlineKeyboardButton(text="📄 User စာရင်းယူရန်", callback_data="admin_fetch_users"))
-    builder.row(InlineKeyboardButton(text="📄 Group စာရင်းယူရန်", callback_data="admin_fetch_groups"))
+    builder.row(InlineKeyboardButton(text="📢 User မာျးဆီ Broadcast ပို့ရန္", callback_data="admin_broadcast"))
+    builder.row(InlineKeyboardButton(text="📢 Group မာျးဆီ Broadcast ပို့ရန္", callback_data="admin_group_broadcast"))
+    builder.row(InlineKeyboardButton(text="📄 User စာရငျးယူရန္", callback_data="admin_fetch_users"))
+    builder.row(InlineKeyboardButton(text="📄 Group စာရငျးယူရန္", callback_data="admin_fetch_groups"))
     builder.row(InlineKeyboardButton(text="🔄 Refresh", callback_data="admin_refresh"))
-    builder.row(InlineKeyboardButton(text="👤 User Interface ကြည့်ရန်", callback_data="view_as_user"))
     
     admin_text = (
         f"⚙️ <b>Admin Panel</b>\n\n"
@@ -328,27 +298,7 @@ async def admin_refresh(call: types.CallbackQuery):
     except:
         await call.answer("Latest data!")
 
-@dp.callback_query(F.data == "view_as_user", F.from_user.id == ADMIN_ID)
-async def view_as_user(call: types.CallbackQuery):
-    await send_welcome(call.from_user.id, call.from_user.first_name)
-    await call.answer()
-
-# --- PROMO VIDEO ---
-@dp.message(F.chat.type == "private", F.video, F.from_user.id == ADMIN_ID)
-async def save_promo_video_handler(message: types.Message):
-    set_promo_video(message.video.file_id)
-    await message.reply("✅ Promo Video သိမ်းဆည်းပြီးပါပြီ!")
-
-@dp.callback_query(F.data == "watch_video")
-async def watch_video_handler(call: types.CallbackQuery):
-    file_id = get_promo_video()
-    if file_id:
-        await call.message.answer_video(video=file_id, caption="🎬 Promo Video")
-    else:
-        await call.message.answer("⚠️ Video မရှိသေးပါ။")
-    await call.answer()
-
-# --- USER CHECK ---
+# USER CHECK
 @dp.callback_query(F.data == "check")
 async def check(call: types.CallbackQuery):
     uid = call.from_user.id
@@ -361,7 +311,6 @@ async def check(call: types.CallbackQuery):
 
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text="⭐ VIP Group ဝင်ရန်", url=GROUP_REQUEST_LINK))
-    builder.row(InlineKeyboardButton(text="🎬 20 စက္ကန့် ဗီဒီယို ကြည့်ရန်", callback_data="watch_video"))
     builder.row(InlineKeyboardButton(text="➕ Bot ကို မိမိ Group ထဲထည့်ရန်", url=add_to_group_url))
     builder.row(InlineKeyboardButton(text="📩 သူငယ်ချင်းထံ ရှဲပေးရန်", url=share_url))
     builder.row(InlineKeyboardButton(text="🔄 အခြေအနေ စစ်ဆေးရန်", callback_data="check"))
@@ -379,7 +328,6 @@ async def check(call: types.CallbackQuery):
         pass
     await call.answer()
 
-# --- JOIN REQUEST & MEMBERSHIP ---
 @dp.chat_join_request()
 async def join_request_handler(update: types.ChatJoinRequest):
     uid = update.from_user.id
@@ -405,7 +353,7 @@ async def bot_membership_update(event: types.ChatMemberUpdated):
     if event.new_chat_member.status in ["member", "administrator"]:
         await save_group_with_link(event.chat.id, event.chat.title)
 
-# --- GROUP MESSAGES / ANTI-LINK / CLEAN-UP ---
+# GROUP MESSAGES & ANTI-LINK / CLEAN-UP
 @dp.message(F.chat.type.in_({"group", "supergroup"}))
 async def handle_group_messages(message: types.Message):
     await save_group_with_link(message.chat.id, message.chat.title)
@@ -536,10 +484,10 @@ async def handle_group_messages(message: types.Message):
             try: await warn_msg.delete()
             except: pass
 
-# --- WEBHOOK SERVER ---
+# SERVER SETUP
 async def on_startup(bot: Bot):
     await bot.set_webhook(WEBHOOK_URL)
-    logging.info(f"Webhook set to: {WEBHOOK_URL}")
+    logging.info(f"Webhook: {WEBHOOK_URL}")
 
 def main():
     dp.startup.register(on_startup)
