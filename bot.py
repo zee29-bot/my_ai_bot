@@ -58,7 +58,6 @@ cursor.execute("CREATE TABLE IF NOT EXISTS groups (group_id INTEGER PRIMARY KEY,
 cursor.execute("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)")
 cursor.execute("CREATE TABLE IF NOT EXISTS warnings (user_id INTEGER, group_id INTEGER, warn_count INTEGER DEFAULT 0, PRIMARY KEY(user_id, group_id))")
 
-# DB Migration: invite_link Column မရှိသေးပါက အလိုအလျောက် ဖြည့်ပေးမည်
 try:
     cursor.execute("ALTER TABLE groups ADD COLUMN invite_link TEXT")
     conn.commit()
@@ -180,7 +179,6 @@ async def start(message: types.Message):
     uid = message.from_user.id
     auto_collect_user(uid, message.from_user.first_name)
 
-    # 👑 ADMIN PANEL
     if uid == ADMIN_ID:
         total_users, total_completed, total_groups = get_admin_stats()
         builder = InlineKeyboardBuilder()
@@ -201,7 +199,6 @@ async def start(message: types.Message):
         await message.answer(admin_text, reply_markup=builder.as_markup(), parse_mode="HTML")
         return
 
-    # REFERRAL LOGIC
     args = message.text.split()
     if len(args) > 1 and args[1].startswith("ref_"):
         referrer = int(args[1].split("_")[1])
@@ -447,11 +444,15 @@ async def handle_group_messages(message: types.Message):
     if message.from_user and not message.from_user.is_bot:
         auto_collect_user(message.from_user.id, message.from_user.first_name)
 
-    # 👑 ADMIN & OWNER ကင်းလွတ်ခွင့် စစ်ဆေးခြင်း (ထိပ်ဆုံးသို့ ရွှေ့ထားသည်)
+    # 👑 BOT OWNER တိုက်ရိုက် ကင်းလွတ်ခွင့် ပေးခြင်း
+    if message.from_user and message.from_user.id == ADMIN_ID:
+        return
+
+    # 👑 GROUP OWNER & ADMIN ကင်းလွတ်ခွင့် စစ်ဆေးခြင်း
     try:
         member = await bot.get_chat_member(chat_id=message.chat.id, user_id=message.from_user.id)
         if member.status in ["creator", "administrator"]:
-            return  # Owner / Admin ဖြစ်ပါက မည်သည့် စာ/Notification ကိုမှ မဖျက်ဘဲ တန်းလွှတ်မည်
+            return  # Owner / Admin ဖြစ်ပါက ဘာစာမဆို တန်းလွှတ်မည်
     except Exception as e:
         logging.error(f"Failed to fetch chat member status: {e}")
 
@@ -468,13 +469,14 @@ async def handle_group_messages(message: types.Message):
         except: pass
         return
 
-    # ၂။ MEMBER ပုံမှန်များ၏ LINK / INLINE BUTTONS SPAM စစ်ဆေးခြင်း
+    # ၂။ MEMBER ပုံမှန်များ၏ LINK / INLINE BUTTONS / USERNAME SPAM စစ်ဆေးခြင်း
     should_delete = False
 
     if message.reply_markup and message.reply_markup.inline_keyboard:
         should_delete = True
     else:
         content_to_check = message.text or message.caption or ""
+        # Link သို့မဟုတ် Username @mention ပါ၊ မပါ စစ်ဆေးခြင်း
         if re.search(r"(https?://|t\.me|telegram\.me|www\.|@[a-zA-Z0-9_]+)", content_to_check, re.IGNORECASE):
             should_delete = True
         elif message.entities or message.caption_entities:
@@ -511,7 +513,7 @@ async def handle_group_messages(message: types.Message):
                 mute_text = (
                     f"👤 <b>{user_mention}</b>\n"
                     f"Muted permanently!\n"
-                    f"<b>Reason:</b> Link / Spam (10) ကြိမ် တင်ခဲ့ခြင်း"
+                    f"<b>Reason:</b> Link / Mention Spam (10) ကြိမ် တင်ခဲ့ခြင်း"
                 )
                 
                 mute_msg = await message.answer(mute_text, parse_mode="HTML")
@@ -534,7 +536,7 @@ async def handle_group_messages(message: types.Message):
                 mute_text = (
                     f"👤 <b>{user_mention}</b>\n"
                     f"Muted for 1 hour!\n"
-                    f"<b>Reason:</b> Link / Spam ({warns}) ကြိမ် တင်ခဲ့ခြင်း"
+                    f"<b>Reason:</b> Link / Mention Spam ({warns}) ကြိမ် တင်ခဲ့ခြင်း"
                 )
                 
                 mute_msg = await message.answer(mute_text, parse_mode="HTML")
@@ -557,7 +559,7 @@ async def handle_group_messages(message: types.Message):
                 mute_text = (
                     f"👤 <b>{user_mention}</b>\n"
                     f"Muted for 30 minutes!\n"
-                    f"<b>Reason:</b> Link / Spam ({warns}) ကြိမ် တင်ခဲ့ခြင်း"
+                    f"<b>Reason:</b> Link / Mention Spam ({warns}) ကြိမ် တင်ခဲ့ခြင်း"
                 )
                 
                 mute_msg = await message.answer(mute_text, parse_mode="HTML")
@@ -572,7 +574,7 @@ async def handle_group_messages(message: types.Message):
             warn_text = (
                 f"👤 <b>{user_mention}</b>\n"
                 f"Warning [{warns}/3]\n"
-                f"<b>Reason:</b> Link / Spam တင်ခွင့် မပြုခြင်း"
+                f"<b>Reason:</b> Link သို့မဟုတ် @mention တင်ခွင့် မပြုခြင်း"
             )
             
             warn_msg = await message.answer(warn_text, parse_mode="HTML")
