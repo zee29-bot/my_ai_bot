@@ -489,15 +489,71 @@ async def handle_group_messages(message: types.Message):
     if message.from_user and not message.from_user.is_bot:
         auto_collect_user(message.from_user.id, message.from_user.first_name)
 
-    # 👑 1. REMAIN ANONYMOUS ဖွင့်ထားသော GROUP OWNER / ADMIN စာများကို စစ်ဆေးကာ ကင်းလွတ်ခွင့်ပေးခြင်း
+    # -------------------------------------------------------------
+    # 🚨 BOT ADMIN ဟုတ်မဟုတ် စစ်ဆေးခြင်းနှင့် လိုရင်းတိုရှင်း သတိပေးခြင်း
+    # -------------------------------------------------------------
+    try:
+        bot_member = await bot.get_chat_member(chat_id=message.chat.id, user_id=(await bot.get_me()).id)
+        if bot_member.status != "administrator":
+            admin_warn = await message.answer("⚠️ Bot အလုပ်လုပ်နိုင်ရန် Admin ခွင့်ပြုချက် (Permissions) ပေးပါ။")
+            await asyncio.sleep(5)
+            try:
+                await admin_warn.delete()
+            except:
+                pass
+            return
+    except Exception as e:
+        logging.error(f"Failed to check bot status: {e}")
+
+    # -------------------------------------------------------------
+    # 🧹 ၁။ NOTIFICATION စာကြောင်းများ အကုန်လုံးကို ဖျက်ခြင်း
+    # -------------------------------------------------------------
+    is_notification = any([
+        message.new_chat_members,
+        message.left_chat_member,
+        message.pinned_message,
+        message.new_chat_title,
+        message.new_chat_photo,
+        message.delete_chat_photo,
+        message.group_chat_created,
+        message.supergroup_chat_created,
+        message.channel_chat_created,
+        message.message_auto_delete_timer_changed,
+        message.migrate_to_chat_id,
+        message.migrate_from_chat_id,
+        message.successful_payment,
+        message.user_shared,
+        message.chat_shared,
+        message.write_access_allowed,
+        message.forum_topic_created,
+        message.forum_topic_edited,
+        message.forum_topic_closed,
+        message.forum_topic_reopened,
+        message.general_forum_topic_hidden,
+        message.general_forum_topic_unhidden,
+        message.video_chat_scheduled,
+        message.video_chat_started,
+        message.video_chat_ended,
+        message.video_chat_participants_invited,
+        message.web_app_data
+    ])
+
+    if is_notification:
+        try: 
+            await message.delete()
+        except Exception as e:
+            logging.error(f"Failed to delete notification: {e}")
+        return
+
+    # 👑 2. REMAIN ANONYMOUS ဖွင့်ထားသော GROUP OWNER / ADMIN စာများကို စစ်ဆေးကာ ကင်းလွတ်ခွင့်ပေးခြင်း
     if message.sender_chat and message.sender_chat.id == message.chat.id:
         return
 
-    # 👑 2. BOT OWNER/ADMIN တိုက်ရိုက် ကင်းလွတ်ခွင့် ပေးခြင်း
+    # 👑 3. BOT OWNER/ADMIN တိုက်ရိုက် ကင်းလွတ်ခွင့် ပေးခြင်း
     if message.from_user and message.from_user.id == ADMIN_ID:
         return
 
-    # 👑 3. GROUP OWNER & ADMIN ကင်းလွတ်ခွင့် စစ်ဆေးခြင်း
+    # 👑 4. GROUP OWNER & ADMIN ကင်းလွတ်ခွင့် စစ်ဆေးခြင်း
     if message.from_user:
         try:
             member = await bot.get_chat_member(chat_id=message.chat.id, user_id=message.from_user.id)
@@ -509,21 +565,6 @@ async def handle_group_messages(message: types.Message):
     # -------------------------------------------------------------
     # ⚠️ အောက်ပါအပိုင်းသည် ပုံမှန် MEMBER များအတွက်သာ အလုပ်လုပ်ပါမည်
     # -------------------------------------------------------------
-
-    # ၁။ NOTIFICATION စာကြောင်းများ ဖျက်ခြင်း
-    is_notification = any([
-        message.new_chat_members, message.left_chat_member, message.pinned_message,
-        message.new_chat_title, message.new_chat_photo, message.delete_chat_photo,
-        message.group_chat_created, message.supergroup_chat_created,
-        message.video_chat_started, message.video_chat_ended
-    ])
-
-    if is_notification:
-        try: 
-            await message.delete()
-        except: 
-            pass
-        return
 
     # ၂။ LINK ပါမှသာ စစ်ဆေးပြီး ဖျက်မည့် စနစ် (@username များကို မဖျက်ပါ)
     should_delete = False
