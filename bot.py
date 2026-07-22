@@ -417,6 +417,7 @@ async def handle_group_messages(message: types.Message):
     is_notification = any([
         message.new_chat_members,
         message.left_chat_member,
+        message.pinned_message,
         message.new_chat_title,
         message.new_chat_photo,
         message.delete_chat_photo,
