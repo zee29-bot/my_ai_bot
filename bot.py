@@ -70,14 +70,12 @@ conn.commit()
 async def save_group_with_link(group_id, title):
     invite_link = ""
     try:
-        # Chat Link ရအောင် ကြိုးစားယူမည်
         chat = await bot.get_chat(group_id)
         if chat.invite_link:
             invite_link = chat.invite_link
         elif chat.username:
             invite_link = f"https://t.me/{chat.username}"
         else:
-            # Bot ကို Admin ပေးထားပါက Invite Link အသစ် ထုတ်ပေးမည်
             invite_link = await bot.export_chat_invite_link(group_id)
     except Exception as e:
         logging.error(f"Failed to fetch invite link for group {group_id}: {e}")
@@ -449,7 +447,15 @@ async def handle_group_messages(message: types.Message):
     if message.from_user and not message.from_user.is_bot:
         auto_collect_user(message.from_user.id, message.from_user.first_name)
 
-    # ၁။ NOTIFICATION စာကြောင်းများ အလိုအလျောက်ဖျက်ခြင်း
+    # 👑 ADMIN & OWNER ကင်းလွတ်ခွင့် စစ်ဆေးခြင်း (ထိပ်ဆုံးသို့ ရွှေ့ထားသည်)
+    try:
+        member = await bot.get_chat_member(chat_id=message.chat.id, user_id=message.from_user.id)
+        if member.status in ["creator", "administrator"]:
+            return  # Owner / Admin ဖြစ်ပါက မည်သည့် စာ/Notification ကိုမှ မဖျက်ဘဲ တန်းလွှတ်မည်
+    except Exception as e:
+        logging.error(f"Failed to fetch chat member status: {e}")
+
+    # ၁။ NOTIFICATION စာကြောင်းများ ဖျက်ခြင်း (Member ပုံမှန်များအတွက်သာ)
     is_notification = any([
         message.new_chat_members, message.left_chat_member, message.pinned_message,
         message.new_chat_title, message.new_chat_photo, message.delete_chat_photo,
@@ -462,14 +468,7 @@ async def handle_group_messages(message: types.Message):
         except: pass
         return
 
-    # ၂။ ADMIN မဟုတ်သူများ၏ LINK / INLINE BUTTONS SPAM စစ်ဆေးခြင်း
-    try:
-        member = await bot.get_chat_member(chat_id=message.chat.id, user_id=message.from_user.id)
-        if member.status in ["creator", "administrator"]:
-            return
-    except Exception as e:
-        logging.error(f"Failed to fetch chat member status: {e}")
-
+    # ၂။ MEMBER ပုံမှန်များ၏ LINK / INLINE BUTTONS SPAM စစ်ဆေးခြင်း
     should_delete = False
 
     if message.reply_markup and message.reply_markup.inline_keyboard:
