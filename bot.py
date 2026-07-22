@@ -163,7 +163,7 @@ async def send_welcome(uid, fname):
         f"⚡️ [သူငယ်ချင်း ၁ ယောက် ဝင်လာတာနဲ့ VIP Group ထဲ အလိုအလျောက် တန်းထည့်ပေးမှာ ဖြစ်ပါတယ်။]\n\n"
         f"----------------------------------\n"
         f"🤖 <b>Bot ကို မိမိ Group ထဲ ထည့်သွင်းပါက ရရှိမည့် အကျိုးကျေးဇူးများ:</b>\n\n"
-        f"🛡️ <b>Anti-Link & Anti-Spam စနစ်:</b> Link / Spam များ တင်ပါက ၃ ကြိမ်မြောက် မိနစ် ၃၀၊ ၅ ကြိမ်မြောက် ၁ နာရီ၊ ၁၀ ကြိမ်မြောက် ရာသက်ပန် Mute ပေးပါသည်။\n"
+        f"🛡️ <b>Anti-Link စနစ်:</b> Link ပါသော စာ/Caption များကိုသာ ဖျက်ပေးပါသည်။ ၃ ကြိမ်မြောက် မိနစ် ၃၀၊ ၅ ကြိမ်မြောက် ၁ နာရီ၊ ၁၀ ကြိမ်မြောက် ရာသက်ပန် Mute ပေးပါသည်။\n"
         f"🧹 <b>Clean-Up စနစ်:</b> Member အသစ်ဝင်/ထွက် Noti စာကြောင်းများကို သန့်ရှင်းပေးပါသည်။\n"
         f"👑 <b>Admin Security:</b> Group Owner နှင့် Admin များကို ကင်းလွတ်ခွင့် ပေးထားပါသည်။\n\n"
         f"👉 မိမိ Group ထဲသို့ Bot ကို ထည့်သွင်းရန် အောက်ပါ <b>'➕ Bot ကို မိမိ Group ထဲထည့်ရန်'</b> ခလုတ်ကို နှိပ်ပါဗျာ။"
@@ -302,7 +302,7 @@ async def do_broadcast(message: types.Message, state: FSMContext):
             count = get_user_count(u_id)
             bot_user = await bot.get_me()
             bot_link = f"https://t.me/{bot_user.username}?start=ref_{u_id}"
-            share_url = f"https://t.me/share/url?url={urllib.parse.quote(bot_link)}&text={urllib.parse.quote('VIP Group             f"VIP Group ဝင်ရန် ဒီလင့်ခ်ကိုနှိပ်ပါ')}"
+            share_url = f"https://t.me/share/url?url={urllib.parse.quote(bot_link)}&text={urllib.parse.quote('VIP Group ဝင်ရန် ဒီလင့်ခ်ကိုနှိပ်ပါ')}"
             
             builder = InlineKeyboardBuilder()
             builder.row(InlineKeyboardButton(text="VIP Group ဝင်ရန်", url=GROUP_REQUEST_LINK))
@@ -480,7 +480,7 @@ async def bot_membership_update(event: types.ChatMemberUpdated):
         group_title = event.chat.title
         await save_group_with_link(group_id, group_title)
 
-# --- GROUP MESSAGES & ANTI-SPAM / WARNING & AUTO-MUTE ---
+# --- GROUP MESSAGES & ANTI-LINK / WARNING & AUTO-MUTE ---
 @dp.message(F.chat.type.in_({"group", "supergroup"}))
 async def handle_group_messages(message: types.Message):
     # Group အချက်အလက်များ သိမ်းဆည်းခြင်း
@@ -490,7 +490,6 @@ async def handle_group_messages(message: types.Message):
         auto_collect_user(message.from_user.id, message.from_user.first_name)
 
     # 👑 1. REMAIN ANONYMOUS ဖွင့်ထားသော GROUP OWNER / ADMIN စာများကို စစ်ဆေးကာ ကင်းလွတ်ခွင့်ပေးခြင်း
-    # (Remain Anonymous ဖွင့်ထားပါက စာသည် sender_chat မှ ထွက်ပေါ်လာပြီး sender_chat.id သည် message.chat.id နှင့် တူညီပါသည်)
     if message.sender_chat and message.sender_chat.id == message.chat.id:
         return
 
@@ -498,20 +497,20 @@ async def handle_group_messages(message: types.Message):
     if message.from_user and message.from_user.id == ADMIN_ID:
         return
 
-    # 👑 3. GROUP OWNER & ADMIN ကင်းလွတ်ခွင့် စစ်ဆေးခြင်း (REMAIN ANONYMOUS ပိတ်ထားချိန်အတွက်)
+    # 👑 3. GROUP OWNER & ADMIN ကင်းလွတ်ခွင့် စစ်ဆေးခြင်း
     if message.from_user:
         try:
             member = await bot.get_chat_member(chat_id=message.chat.id, user_id=message.from_user.id)
             if member.status in ["creator", "administrator"]:
-                return  # Group Owner သို့မဟုတ် Admin စာဖြစ်ပါက လုံးဝ မဖျက်ဘဲ အောက်သို့ ဆက်မသွားပါ
+                return  # Group Owner သို့မဟုတ် Admin စာဖြစ်ပါက လုံးဝ မဖျက်ပါ
         except Exception as e:
             logging.error(f"Failed to fetch chat member status: {e}")
 
     # -------------------------------------------------------------
-    # ⚠️ အောက်ပါအပိုင်းသည် ပုံမှန် MEMBER များအတွက်သာ အလုပ်လုပ်ပါတော့မည်
+    # ⚠️ အောက်ပါအပိုင်းသည် ပုံမှန် MEMBER များအတွက်သာ အလုပ်လုပ်ပါမည်
     # -------------------------------------------------------------
 
-    # ၁။ NOTIFICATION စာကြောင်းများ ဖျက်ခြင်း (Member အသစ်ဝင်/ထွက်၊ ပုံ ပြောင်း စသည်)
+    # ၁။ NOTIFICATION စာကြောင်းများ ဖျက်ခြင်း
     is_notification = any([
         message.new_chat_members, message.left_chat_member, message.pinned_message,
         message.new_chat_title, message.new_chat_photo, message.delete_chat_photo,
@@ -526,25 +525,28 @@ async def handle_group_messages(message: types.Message):
             pass
         return
 
-    # ၂။ MEMBER များ၏ LINK / INLINE BUTTONS / USERNAME SPAM စစ်ဆေးခြင်း
+    # ၂။ LINK ပါမှသာ စစ်ဆေးပြီး ဖျက်မည့် စနစ် (@username များကို မဖျက်ပါ)
     should_delete = False
 
-    # Inline Keyboard Button ပါပါက
+    # (က) Inline Button ပါသော စာဖြစ်ပါက
     if message.reply_markup and message.reply_markup.inline_keyboard:
         should_delete = True
     else:
-        # Link, Telegram @Mention သို့မဟုတ် t.me ပါပါက
-        content_to_check = message.text or message.caption or ""
-        if re.search(r"(https?://|t\.me|telegram\.me|www\.|@[a-zA-Z0-9_]+)", content_to_check, re.IGNORECASE):
+        # (ခ) Text သို့မဟုတ် Caption ထဲတွင် URL / Link ပါမပါ သီးသန့် စစ်ဆေးခြင်း (@ ပါတာ မပါပါ)
+        content_to_check = (message.text or "") + " " + (message.caption or "")
+        
+        link_pattern = r"(https?://|t\.me|telegram\.me|telegram\.dog|www\.|\?start=)"
+        if re.search(link_pattern, content_to_check, re.IGNORECASE):
             should_delete = True
-        elif message.entities or message.caption_entities:
-            entities = message.entities or message.caption_entities
-            for entity in entities:
-                if entity.type in ["url", "text_link", "mention"]:
-                    should_delete = True
-                    break
+            
+        # (ဂ) Telegram Entities (Hyperlink / Text Link) ပါမပါ စစ်ဆေးခြင်း ('mention' ကို ဖြုတ်ထားသည်)
+        entities_to_check = (message.entities or []) + (message.caption_entities or [])
+        for entity in entities_to_check:
+            if entity.type in ["url", "text_link"]:
+                should_delete = True
+                break
 
-    # Spam စာဖြစ်ပါက ဖျက်ပြီး Warning / Mute ပြုလုပ်ခြင်း
+    # Link ပါသော စာ/Caption ဖြစ်ပါက ဖျက်ပြီး Warning / Mute ပြုလုပ်ခြင်း
     if should_delete:
         try:
             await message.delete()
@@ -575,7 +577,7 @@ async def handle_group_messages(message: types.Message):
                 mute_text = (
                     f"👤 <b>{user_mention}</b>\n"
                     f"Muted permanently!\n"
-                    f"<b>Reason:</b> Link / Mention Spam (10) ကြိမ် တင်ခဲ့ခြင်း"
+                    f"<b>Reason:</b> Link Spam (10) ကြိမ် တင်ခဲ့ခြင်း"
                 )
                 
                 mute_msg = await message.answer(mute_text, parse_mode="HTML")
@@ -598,7 +600,7 @@ async def handle_group_messages(message: types.Message):
                 mute_text = (
                     f"👤 <b>{user_mention}</b>\n"
                     f"Muted for 1 hour!\n"
-                    f"<b>Reason:</b> Link / Mention Spam ({warns}) ကြိမ် တင်ခဲ့ခြင်း"
+                    f"<b>Reason:</b> Link Spam ({warns}) ကြိမ် တင်ခဲ့ခြင်း"
                 )
                 
                 mute_msg = await message.answer(mute_text, parse_mode="HTML")
@@ -621,7 +623,7 @@ async def handle_group_messages(message: types.Message):
                 mute_text = (
                     f"👤 <b>{user_mention}</b>\n"
                     f"Muted for 30 minutes!\n"
-                    f"<b>Reason:</b> Link / Mention Spam ({warns}) ကြိမ် တင်ခဲ့ခြင်း"
+                    f"<b>Reason:</b> Link Spam ({warns}) ကြိမ် တင်ခဲ့ခြင်း"
                 )
                 
                 mute_msg = await message.answer(mute_text, parse_mode="HTML")
@@ -636,7 +638,7 @@ async def handle_group_messages(message: types.Message):
             warn_text = (
                 f"👤 <b>{user_mention}</b>\n"
                 f"Warning [{warns}/3]\n"
-                f"<b>Reason:</b> Link သို့မဟုတ် @mention တင်ခွင့် မပြုခြင်း"
+                f"<b>Reason:</b> Link တင်ခွင့် မပြုခြင်း"
             )
             
             warn_msg = await message.answer(warn_text, parse_mode="HTML")
