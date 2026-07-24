@@ -271,7 +271,7 @@ async def do_broadcast(message: types.Message, state: FSMContext):
         try:
             await bot.send_message(chat_id=u_id, text=f"📢 <b>Announcement</b>\n\n{broadcast_text}", parse_mode="HTML")
             success += 1
-            await asyncio.sleep(0.05)
+            await asyncio.sleep(0.3)
         except:
             fail += 1
             
